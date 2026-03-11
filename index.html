@@ -562,12 +562,17 @@ Day 2
             <button class="btn" onclick="parseAndCreateReminder()">✨ 智能识别并创建提醒</button>
             <button class="btn btn-secondary" onclick="clearInput()">清空</button>
             <button class="btn btn-secondary" onclick="testSound()">🔊 测试声音</button>
-            <select id="soundType" onchange="changeSoundType()" style="margin-left: 10px; padding: 8px 12px; border-radius: 20px; border: 2px solid #e0e0e0;">
-                <option value="ding">叮叮叮</option>
-                <option value="chime">清脆铃声</option>
-                <option value="gentle">温柔提示</option>
-                <option value="attention">注意提醒</option>
-            </select>
+            <div style="margin-left: 15px; display: inline-flex; align-items: center; gap: 10px;">
+                <select id="soundType" onchange="changeSoundType()" style="padding: 8px 12px; border-radius: 20px; border: 2px solid #e0e0e0;">
+                    <option value="ding">叮叮叮</option>
+                    <option value="chime">清脆铃声</option>
+                    <option value="gentle">温柔提示</option>
+                    <option value="attention">注意提醒</option>
+                </select>
+                <span style="font-size: 0.9em; color: #666;">音量:</span>
+                <input type="range" id="volumeSlider" min="0" max="100" value="30" onchange="changeVolume()" oninput="changeVolume()" style="width: 100px; cursor: pointer;">
+                <span id="volumeValue" style="font-size: 0.9em; color: #666; min-width: 35px;">30%</span>
+            </div>
         </div>
 
         <div class="tips">
@@ -668,6 +673,7 @@ Day 2
         let currentViewDay = 0; // 当前查看的天数 (0-6)
         let editingReminderId = null; // 当前编辑的提醒ID
         let currentSoundType = localStorage.getItem('reminderSoundType') || 'ding'; // 当前声音类型
+        let currentVolume = parseInt(localStorage.getItem('reminderVolume') || '30'); // 当前音量 (0-100)
 
         // 饮食相关关键词
         const mealKeywords = {
@@ -695,6 +701,14 @@ Day 2
             if (savedSoundType) {
                 currentSoundType = savedSoundType;
                 document.getElementById('soundType').value = savedSoundType;
+            }
+
+            // 恢复用户设置的音量
+            const savedVolume = localStorage.getItem('reminderVolume');
+            if (savedVolume) {
+                currentVolume = parseInt(savedVolume);
+                document.getElementById('volumeSlider').value = currentVolume;
+                document.getElementById('volumeValue').textContent = currentVolume + '%';
             }
         }
 
@@ -739,13 +753,21 @@ Day 2
             testSound(); // 切换后立即测试新声音
         }
 
+        // 切换音量
+        function changeVolume() {
+            const slider = document.getElementById('volumeSlider');
+            currentVolume = parseInt(slider.value);
+            document.getElementById('volumeValue').textContent = currentVolume + '%';
+            localStorage.setItem('reminderVolume', currentVolume);
+        }
+
         // 播放提醒声音（使用Web Audio API生成）
         function playReminderSound() {
             try {
                 // 创建音频上下文
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-                const playNote = (freq, startTime, duration, type = 'sine', volume = 0.3) => {
+                const playNote = (freq, startTime, duration, type = 'sine', baseVolume = 0.3) => {
                     const oscillator = audioContext.createOscillator();
                     const gainNode = audioContext.createGain();
 
@@ -754,6 +776,9 @@ Day 2
 
                     oscillator.frequency.value = freq;
                     oscillator.type = type;
+
+                    // 应用用户设置的音量
+                    const volume = (currentVolume / 100) * baseVolume;
 
                     // 音量包络
                     gainNode.gain.setValueAtTime(volume, startTime);
@@ -854,16 +879,6 @@ Day 2
         function parseDietLine(line, dayOffset = 0) {
             const now = new Date();
             const baseDate = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // 当天午夜
-            // 识别餐别
-            let mealType = 'meal';
-            for (const [type, keywords] of Object.entries(mealKeywords)) {
-                for (const keyword of keywords) {
-                    if (line.includes(keyword)) {
-                        mealType = type;
-                        break;
-                    }
-                }
-            }
 
             // 识别时间
             const timeMatch = line.match(/(\d{1,2}):(\d{2})/);
@@ -889,6 +904,28 @@ Day 2
                 return null; // 没有识别到时间
             }
 
+            // 识别餐别 - 优先使用时间前面的内容作为餐别
+            let mealType = 'meal';
+            const timeIndex = line.indexOf(timeStr);
+
+            if (timeIndex > 0) {
+                // 提取时间前面的内容
+                const beforeTime = line.substring(0, timeIndex).trim();
+                if (beforeTime) {
+                    mealType = beforeTime; // 直接使用时间前面的内容作为餐别
+                }
+            } else {
+                // 如果时间在开头，则在整行中查找餐别关键词
+                for (const [type, keywords] of Object.entries(mealKeywords)) {
+                    for (const keyword of keywords) {
+                        if (line.includes(keyword)) {
+                            mealType = type;
+                            break;
+                        }
+                    }
+                }
+            }
+
             // 计算提醒时间 - 使用基准日期（归零到午夜）
             const reminderTime = new Date(baseDate.getTime());
             reminderTime.setHours(hours, minutes, 0, 0);
@@ -899,15 +936,33 @@ Day 2
             // 如果是今天（dayOffset=0）且时间已过，不自动调整
             // 让用户自己决定是否要删除或编辑
 
-            // 提取食物内容
-            let content = line
-                .replace(/(\d{1,2}:\d{2})/, '')
-                .replace(/(\d{1,2})点/, '')
-                .replace(/(\d{1,2})时/, '')
-                .replace(/早餐|早饭|早上|晨|早|午餐|午饭|中午|午|晚餐|晚饭|晚上|夜|晚|点心|零食|加餐|下午茶|夜宵/g, '')
-                .replace(/明天|后天|今天/g, '')
-                .replace(/\s+/g, ' ')
-                .trim();
+            // 提取食物内容 - 优先使用时间后面的内容
+            let content = '';
+            const timePos = line.indexOf(timeStr);
+            if (timePos >= 0) {
+                const afterTime = line.substring(timePos + timeStr.length).trim();
+                content = afterTime;
+            }
+
+            // 如果时间后面没有内容，则尝试提取整行内容并移除标准餐别关键词
+            if (!content) {
+                content = line
+                    .replace(/(\d{1,2}:\d{2})/, '')
+                    .replace(/(\d{1,2})点/, '')
+                    .replace(/(\d{1,2})时/, '')
+                    .replace(/早餐|早饭|早上|晨|早|午餐|午饭|中午|午|晚餐|晚饭|晚上|夜|晚|点心|零食|加餐|下午茶|夜宵/g, '')
+                    .replace(/明天|后天|今天/g, '')
+                    .replace(/\s+/g, ' ')
+                    .trim();
+            }
+
+            // 如果时间前面的内容被用作餐别，需要从内容中移除它
+            if (timeIndex > 0) {
+                const beforeTime = line.substring(0, timeIndex).trim();
+                if (beforeTime && content.startsWith(beforeTime)) {
+                    content = content.substring(beforeTime.length).trim();
+                }
+            }
 
             if (!content) {
                 content = '记得用餐';
