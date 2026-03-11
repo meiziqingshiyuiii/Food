@@ -564,6 +564,54 @@
                 justify-content: space-between;
             }
         }
+
+        /* 自定义弹窗样式 */
+        .custom-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .custom-modal.show {
+            display: flex;
+        }
+
+        .custom-modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+
+        .custom-modal h4 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+
+        .custom-modal p {
+            color: #555;
+            margin-bottom: 25px;
+            line-height: 1.6;
+            font-size: 1.1em;
+            white-space: pre-line;
+        }
+
+        .custom-modal-actions {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
     </style>
 </head>
 <body>
@@ -703,10 +751,22 @@ Day 2
 
     <!-- 声音文件（使用Web Audio API生成） -->
 
+    <!-- 饮食提醒弹窗 -->
     <div class="notification-banner" id="notificationBanner">
         <h4>⏰ 饮食提醒</h4>
         <p id="notificationText"></p>
         <button class="btn" onclick="closeNotification()">知道了</button>
+    </div>
+
+    <!-- 自定义消息弹窗 -->
+    <div class="custom-modal" id="customModal">
+        <div class="custom-modal-content">
+            <h4 id="customModalTitle">消息</h4>
+            <p id="customModalText"></p>
+            <div class="custom-modal-actions">
+                <button class="btn" onclick="closeCustomModal()">确定</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -722,6 +782,7 @@ Day 2
         let audioStartTime = 0; // 音频开始时间
         let audioPausedTime = 0; // 音频暂停时间
         let audioContext = null; // 音频上下文
+        let currentGainNode = null; // 当前增益节点（用于实时音量控制）
 
         // 饮食相关关键词
         const mealKeywords = {
@@ -815,12 +876,17 @@ Day 2
             // 移除自动播放测试声音，只有在点击测试按钮时才播放
         }
 
-        // 切换音量
+        // 切换音量（实时更新）
         function changeVolume() {
             const slider = document.getElementById('volumeSlider');
             currentVolume = parseInt(slider.value);
             document.getElementById('volumeValue').textContent = currentVolume + '%';
             localStorage.setItem('reminderVolume', currentVolume);
+            
+            // 实时更新当前正在播放的音频音量
+            if (isAudioPlaying && currentGainNode) {
+                currentGainNode.gain.value = currentVolume / 100;
+            }
         }
 
         // 播放提醒声音（使用Web Audio API生成）
@@ -1319,11 +1385,11 @@ Day 2
                 currentTestAudioSource.buffer = customAudioBuffer;
                 
                 // 创建增益节点以控制音量
-                const gainNode = audioContext.createGain();
-                gainNode.gain.value = currentVolume / 100;
+                currentGainNode = audioContext.createGain();
+                currentGainNode.gain.value = currentVolume / 100;
                 
-                currentTestAudioSource.connect(gainNode);
-                gainNode.connect(audioContext.destination);
+                currentTestAudioSource.connect(currentGainNode);
+                currentGainNode.connect(audioContext.destination);
                 
                 // 计算开始播放的时间
                 const startTime = audioPausedTime > 0 ? audioPausedTime : 0;
@@ -1376,7 +1442,7 @@ Day 2
         function parseAndCreateReminder() {
             const input = document.getElementById('dietInput').value.trim();
             if (!input) {
-                alert('请输入饮食计划');
+                showCustomModal('输入提示', '请输入饮食计划');
                 return;
             }
 
@@ -1399,7 +1465,7 @@ Day 2
             });
 
             if (newReminders.length === 0) {
-                alert('未能识别到有效的饮食计划，请检查格式');
+                showCustomModal('识别失败', '未能识别到有效的饮食计划，请检查格式');
                 return;
             }
 
@@ -1408,10 +1474,24 @@ Day 2
             renderReminders();
             clearInput();
 
-            alert(`成功创建 ${newReminders.length} 个饮食提醒！\n提醒已分配到接下来的 ${currentDayOffset + 1} 天。`);
+            showCustomModal('创建成功', `成功创建 ${newReminders.length} 个饮食提醒！\n提醒已分配到接下来的 ${currentDayOffset + 1} 天。`);
 
-            // 创建提醒后立即静默检查一次，标记已过期的提醒为已通知（不显示弹窗）
-            checkReminders(true);
+            // 创建提醒后立即静默检查一次，但不显示通知弹窗
+            const now = Date.now();
+            let hasExpiredReminders = false;
+            
+            reminders.forEach(reminder => {
+                if (reminder.active && !reminder.notified && now >= reminder.reminderTime) {
+                    // 静默标记已过期的提醒为已通知，不显示弹窗
+                    reminder.notified = true;
+                    hasExpiredReminders = true;
+                }
+            });
+            
+            if (hasExpiredReminders) {
+                saveReminders();
+                renderReminders();
+            }
         }
 
         // 解析单行饮食计划
@@ -1696,12 +1776,12 @@ Day 2
             const content = document.getElementById('addContent').value.trim();
 
             if (!mealType) {
-                alert('请输入餐别');
+                showCustomModal('输入提示', '请输入餐别');
                 return;
             }
 
             if (!timeValue) {
-                alert('请选择时间');
+                showCustomModal('输入提示', '请选择时间');
                 return;
             }
 
@@ -1741,12 +1821,12 @@ Day 2
             const content = document.getElementById('editContent').value.trim();
 
             if (!mealType) {
-                alert('请输入餐别');
+                showCustomModal('输入提示', '请输入餐别');
                 return;
             }
 
             if (!timeValue) {
-                alert('请选择时间');
+                showCustomModal('输入提示', '请选择时间');
                 return;
             }
 
@@ -1797,16 +1877,20 @@ Day 2
 
         // 清除所有提醒
         function clearAllReminders() {
-            if (confirm('确定要清除所有饮食提醒吗？此操作不可恢复！')) {
-                reminders = [];
-                currentViewDay = 0;
-                localStorage.removeItem('dietReminders');
-                // 同时清除其他保存的设置
-                localStorage.removeItem('reminderSoundType');
-                localStorage.removeItem('reminderVolume');
-                renderReminders();
-                alert('所有提醒已清除');
-            }
+            showCustomModal('确认清除', '确定要清除所有饮食提醒吗？此操作不可恢复！', true);
+        }
+
+        // 确认清除所有提醒
+        function confirmClearAllReminders() {
+            reminders = [];
+            currentViewDay = 0;
+            localStorage.removeItem('dietReminders');
+            // 同时清除其他保存的设置
+            localStorage.removeItem('reminderSoundType');
+            localStorage.removeItem('reminderVolume');
+            renderReminders();
+            closeCustomModal();
+            showCustomModal('操作完成', '所有提醒已清除');
         }
 
         // 重置所有已通知状态（用于测试）
@@ -1919,25 +2003,13 @@ Day 2
 
         // 显示通知
         function showNotification(reminder) {
-            const icon = getMealIcon(reminder.mealType);
             const displayMealType = formatMealType(reminder.mealType);
-            const title = `⏰ ${displayMealType}时间到了！`;
-            const message = reminder.content;
 
             // 播放提醒声音
             playReminderSound();
 
-            // 浏览器通知
-            if (Notification.permission === 'granted') {
-                window.lastNotification = new Notification(title, {
-                    body: `${displayMealType} - ${message}`,
-                    icon: icon,
-                    requireInteraction: true
-                });
-            }
-
-            // 页面内通知
-            document.getElementById('notificationText').innerHTML = `<strong>${displayMealType}</strong><br>${message}`;
+            // 页面内通知弹窗
+            document.getElementById('notificationText').innerHTML = `<strong>${displayMealType}</strong><br>${reminder.content}`;
             document.getElementById('notificationBanner').classList.add('show');
         }
 
@@ -1947,16 +2019,29 @@ Day 2
             
             // 停止所有正在播放的音频
             stopAllAudio();
+        }
+
+        // 显示自定义弹窗
+        function showCustomModal(title, message, showConfirm = false) {
+            document.getElementById('customModalTitle').textContent = title;
+            document.getElementById('customModalText').textContent = message;
             
-            // 关闭浏览器通知（如果存在）
-            if (window.lastNotification) {
-                try {
-                    window.lastNotification.close();
-                    window.lastNotification = null;
-                } catch (error) {
-                    console.log('关闭浏览器通知时出错:', error);
-                }
+            const modalActions = document.querySelector('.custom-modal-actions');
+            if (showConfirm) {
+                modalActions.innerHTML = `
+                    <button class="btn btn-secondary" onclick="closeCustomModal()">取消</button>
+                    <button class="btn btn-danger" onclick="confirmClearAllReminders()">确定清除</button>
+                `;
+            } else {
+                modalActions.innerHTML = '<button class="btn" onclick="closeCustomModal()">确定</button>';
             }
+            
+            document.getElementById('customModal').classList.add('show');
+        }
+
+        // 关闭自定义弹窗
+        function closeCustomModal() {
+            document.getElementById('customModal').classList.remove('show');
         }
         
         // 停止所有音频播放
