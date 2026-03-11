@@ -1,0 +1,1326 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能饮食提醒</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            padding: 30px;
+        }
+
+        h1 {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 10px;
+            font-size: 2.5em;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 1em;
+        }
+
+        .clock-display {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            color: white;
+        }
+
+        .clock-time {
+            font-size: 3em;
+            font-weight: bold;
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+        }
+
+        .clock-date {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+
+        .input-section {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 15px;
+            margin-bottom: 25px;
+        }
+
+        .input-section h3 {
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 1.3em;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 120px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 15px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+        }
+
+        .btn-danger {
+            background: #dc3545;
+        }
+
+        .tips {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 25px;
+        }
+
+        .tips h4 {
+            color: #1976d2;
+            margin-bottom: 10px;
+        }
+
+            .tips ul {
+                margin-left: 20px;
+                color: #555;
+            }
+
+            .tips li {
+                margin-bottom: 5px;
+            }
+
+        .day-badge {
+            display: inline-block;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 3px 10px;
+            border-radius: 15px;
+            font-size: 0.8em;
+            margin-left: 10px;
+        }
+
+        .day-group {
+            margin-bottom: 30px;
+        }
+
+        .day-nav {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+        }
+
+        .day-nav span {
+            font-size: 1.3em;
+            font-weight: bold;
+            color: #667eea;
+            min-width: 120px;
+            text-align: center;
+        }
+
+        .day-view {
+            background: #f8f9fa;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            overflow: visible;
+        }
+
+        .day-view-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            text-align: center;
+            font-size: 1.5em;
+            font-weight: bold;
+            flex-shrink: 0;
+        }
+
+        .day-meals-horizontal {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            padding: 10px;
+        }
+
+        .day-meal-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .day-meal-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+
+        .day-meal-card.breakfast { border-top: 4px solid #ffc107; }
+        .day-meal-card.lunch { border-top: 4px solid #28a745; }
+        .day-meal-card.dinner { border-top: 4px solid #dc3545; }
+        .day-meal-card.snack { border-top: 4px solid #17a2b8; }
+        .day-meal-card.custom { border-top: 4px solid #667eea; }
+
+        .day-meal-card.day-meal-card-compact {
+            padding: 15px;
+        }
+
+        .day-meal-card.day-meal-card-compact .day-meal-type {
+            font-size: 1.1em;
+            margin-bottom: 5px;
+        }
+
+        .day-meal-card.day-meal-card-compact .day-meal-time {
+            font-size: 1em;
+            margin-bottom: 8px;
+        }
+
+
+
+        .day-meal-type {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 8px;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .day-meal-type:hover {
+            color: #667eea;
+        }
+
+        .day-meal-time {
+            color: #667eea;
+            font-weight: bold;
+            font-size: 1.1em;
+            margin-bottom: 12px;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .day-meal-time:hover {
+            color: #764ba2;
+        }
+
+        .day-meal-content {
+            color: #666;
+            line-height: 1.6;
+            font-size: 0.95em;
+            margin-bottom: 15px;
+            flex: 1;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .day-meal-content:hover {
+            color: #333;
+        }
+
+        .day-meal-status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 15px;
+            font-size: 0.8em;
+        }
+
+        .day-meal-status.active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .day-meal-status.inactive {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .day-meal-actions {
+            margin-top: 15px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .day-meal-actions button {
+            flex: 1;
+            min-width: 80px;
+            padding: 8px 12px;
+            font-size: 0.85em;
+        }
+
+        .edit-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 2000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .edit-modal.show {
+            display: flex;
+        }
+
+        .edit-modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            max-width: 500px;
+            width: 90%;
+        }
+
+        .edit-modal h3 {
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+
+        .edit-form-group {
+            margin-bottom: 15px;
+        }
+
+        .edit-form-group label {
+            display: block;
+            margin-bottom: 5px;
+            color: #333;
+            font-weight: bold;
+        }
+
+        .edit-form-group input,
+        .edit-form-group textarea,
+        .edit-form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .edit-form-group textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        .edit-modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .edit-modal-actions button {
+            flex: 1;
+        }
+
+        .reminders-list {
+            margin-top: 30px;
+        }
+
+        .reminders-list h2 {
+            color: #333;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+        }
+
+        .reminder-item {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 15px;
+            border-left: 5px solid #667eea;
+            transition: transform 0.2s;
+        }
+
+        .reminder-item:hover {
+            transform: translateX(5px);
+        }
+
+        .reminder-item.breakfast { border-left-color: #ffc107; }
+        .reminder-item.lunch { border-left-color: #28a745; }
+        .reminder-item.dinner { border-left-color: #dc3545; }
+        .reminder-item.snack { border-left-color: #17a2b8; }
+
+        .reminder-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .meal-type {
+            font-weight: bold;
+            font-size: 1.1em;
+            color: #333;
+        }
+
+        .meal-time {
+            color: #666;
+            font-size: 0.95em;
+        }
+
+        .meal-content {
+            color: #555;
+            margin-bottom: 15px;
+            line-height: 1.6;
+        }
+
+        .reminder-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .reminder-actions button {
+            padding: 8px 15px;
+            font-size: 14px;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.85em;
+            margin-left: 10px;
+        }
+
+        .status-active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status-inactive {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .notification-banner {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px 40px;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            z-index: 1000;
+            max-width: 450px;
+            display: none;
+            animation: fadeIn 0.3s ease;
+            text-align: center;
+        }
+
+        .notification-banner.show {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1);
+            }
+        }
+
+        .notification-banner h4 {
+            color: #667eea;
+            margin-bottom: 15px;
+            font-size: 1.5em;
+        }
+
+        .notification-banner p {
+            color: #555;
+            margin-bottom: 20px;
+            line-height: 1.6;
+            font-size: 1.1em;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+
+        @media (max-width: 600px) {
+            .container {
+                padding: 20px;
+            }
+
+            h1 {
+                font-size: 1.8em;
+            }
+
+            .reminder-header {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .reminder-actions {
+                width: 100%;
+                justify-content: space-between;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🍽️ 智能饮食提醒</h1>
+        <div class="clock-display">
+            <div class="clock-time" id="clockTime">00:00:00</div>
+            <div class="clock-date" id="clockDate">2026年3月11日 星期三</div>
+        </div>
+        <p class="subtitle">输入你的饮食计划，自动创建提醒</p>
+
+        <div class="input-section">
+            <h3>📝 输入饮食计划</h3>
+            <textarea id="dietInput" placeholder="例如：
+Day 1
+早餐 8:00 鸡蛋、牛奶、面包
+午餐 12:30 红烧肉、青菜、米饭
+晚餐 18:00 鱼汤、蔬菜沙拉
+
+Day 2
+早餐 8:00 无糖酸奶 + 鸡蛋
+午餐 12:30 杂粮饭半碗 + 牛肉 + 青菜
+晚餐 18:00 番茄鸡蛋汤
+
+或者：
+明天早上7点喝咖啡
+今晚6点和朋友吃火锅
+下午3点吃水果"></textarea>
+            <button class="btn" onclick="parseAndCreateReminder()">✨ 智能识别并创建提醒</button>
+            <button class="btn btn-secondary" onclick="clearInput()">清空</button>
+            <button class="btn btn-secondary" onclick="testSound()">🔊 测试声音</button>
+            <select id="soundType" onchange="changeSoundType()" style="margin-left: 10px; padding: 8px 12px; border-radius: 20px; border: 2px solid #e0e0e0;">
+                <option value="ding">叮叮叮</option>
+                <option value="chime">清脆铃声</option>
+                <option value="gentle">温柔提示</option>
+                <option value="attention">注意提醒</option>
+            </select>
+        </div>
+
+        <div class="tips">
+            <h4>💡 使用提示</h4>
+            <ul>
+                <li>支持格式：餐别 时间 食物内容（如：早餐 8:00 鸡蛋、牛奶）</li>
+                <li>使用"Day X"标识来标记不同天的计划（如：Day 1、Day 2）</li>
+                <li>时间可以是：8:00、8点、早上8点等</li>
+                <li>可以一次性输入多天的饮食计划</li>
+                <li>支持自然语言描述</li>
+                <li>✨ 点击餐别、时间或内容文字可直接编辑</li>
+            </ul>
+            <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
+                <button class="btn btn-danger" onclick="clearAllReminders()">🗑️ 清除所有提醒</button>
+                <button class="btn btn-secondary" onclick="showRemindersInfo()">📋 查看提醒详情</button>
+                <button class="btn btn-secondary" onclick="resetNotifications()">🔄 重置提醒状态</button>
+            </div>
+        </div>
+
+        <div class="reminders-list">
+            <h2>📅 我的饮食提醒</h2>
+        <div class="day-nav">
+            <button class="btn btn-secondary" onclick="prevDay()">◀ 上一天</button>
+            <span id="currentDayLabel">今天</span>
+            <button class="btn" onclick="openAddReminderModal()">➕ 添加提醒</button>
+            <button class="btn btn-secondary" onclick="nextDay()">下一天 ▶</button>
+        </div>
+        <div id="remindersContainer"></div>
+        </div>
+    </div>
+
+    <!-- 编辑弹窗 -->
+    <div class="edit-modal" id="editModal">
+        <div class="edit-modal-content">
+            <h3>✏️ 编辑饮食提醒</h3>
+            <div class="edit-form-group">
+                <label>餐别</label>
+                <input type="text" id="editMealType" placeholder="例如：早餐、午餐、喝水、运动等">
+            </div>
+            <div class="edit-form-group">
+                <label>时间</label>
+                <input type="time" id="editTime">
+            </div>
+            <div class="edit-form-group">
+                <label>提醒内容</label>
+                <textarea id="editContent"></textarea>
+            </div>
+            <div class="edit-modal-actions">
+                <button class="btn btn-secondary" onclick="closeEditModal()">取消</button>
+                <button class="btn" onclick="saveEdit()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加提醒弹窗 -->
+    <div class="edit-modal" id="addReminderModal">
+        <div class="edit-modal-content">
+            <h3>➕ 添加提醒</h3>
+            <div class="edit-form-group">
+                <label>餐别</label>
+                <input type="text" id="addMealType" placeholder="例如：早餐、午餐、喝水、运动等" list="mealTypeSuggestions">
+                <datalist id="mealTypeSuggestions">
+                    <option value="🥚 早餐">
+                    <option value="🍎 点心/果蔬汁">
+                    <option value="🍚 午餐">
+                    <option value="🍲 晚餐">
+                    <option value="💧 喝水">
+                    <option value="🏃 运动">
+                    <option value="💊 吃药">
+                    <option value="🥤 零食">
+                </datalist>
+            </div>
+            <div class="edit-form-group">
+                <label>时间</label>
+                <input type="time" id="addTime">
+            </div>
+            <div class="edit-form-group">
+                <label>提醒内容</label>
+                <textarea id="addContent" placeholder="例如：喝一杯水、吃水果等"></textarea>
+            </div>
+            <div class="edit-modal-actions">
+                <button class="btn btn-secondary" onclick="closeAddReminderModal()">取消</button>
+                <button class="btn" onclick="saveAddReminder()">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 声音文件（使用Web Audio API生成） -->
+
+    <div class="notification-banner" id="notificationBanner">
+        <h4>⏰ 饮食提醒</h4>
+        <p id="notificationText"></p>
+        <button class="btn" onclick="closeNotification()">知道了</button>
+    </div>
+
+    <script>
+        let reminders = JSON.parse(localStorage.getItem('dietReminders') || '[]');
+        let currentViewDay = 0; // 当前查看的天数 (0-6)
+        let editingReminderId = null; // 当前编辑的提醒ID
+        let currentSoundType = localStorage.getItem('reminderSoundType') || 'ding'; // 当前声音类型
+
+        // 饮食相关关键词
+        const mealKeywords = {
+            breakfast: ['早餐', '早饭', '早上', '晨', '早'],
+            lunch: ['午餐', '午饭', '中午', '午'],
+            dinner: ['晚餐', '晚饭', '晚上', '夜', '晚'],
+            snack: ['点心', '零食', '加餐', '下午茶', '夜宵']
+        };
+
+        // 音频上下文
+        let audioContext = null;
+        let notificationSound = null;
+
+        // 初始化
+        function init() {
+            renderReminders();
+            requestNotificationPermission();
+            updateClock();
+            setInterval(updateClock, 1000); // 每秒更新时钟
+            checkReminders();
+            setInterval(checkReminders, 10000); // 每10秒检查一次
+
+            // 恢复用户选择的声音类型
+            const savedSoundType = localStorage.getItem('reminderSoundType');
+            if (savedSoundType) {
+                currentSoundType = savedSoundType;
+                document.getElementById('soundType').value = savedSoundType;
+            }
+        }
+
+        // 更新时钟
+        function updateClock() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('zh-CN', { hour12: false });
+            const dateStr = now.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+
+            document.getElementById('clockTime').textContent = timeStr;
+            document.getElementById('clockDate').textContent = dateStr;
+        }
+
+        // 上一天
+        function prevDay() {
+            if (currentViewDay > 0) {
+                currentViewDay--;
+                renderReminders();
+            }
+        }
+
+        // 下一天
+        function nextDay() {
+            if (currentViewDay < 6) {
+                currentViewDay++;
+                renderReminders();
+            }
+        }
+
+        // 请求通知权限
+        function requestNotificationPermission() {
+            if ('Notification' in window) {
+                Notification.requestPermission();
+            }
+        }
+
+        // 切换声音类型
+        function changeSoundType() {
+            const select = document.getElementById('soundType');
+            currentSoundType = select.value;
+            localStorage.setItem('reminderSoundType', currentSoundType);
+            testSound(); // 切换后立即测试新声音
+        }
+
+        // 播放提醒声音（使用Web Audio API生成）
+        function playReminderSound() {
+            try {
+                // 创建音频上下文
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+                const playNote = (freq, startTime, duration, type = 'sine', volume = 0.3) => {
+                    const oscillator = audioContext.createOscillator();
+                    const gainNode = audioContext.createGain();
+
+                    oscillator.connect(gainNode);
+                    gainNode.connect(audioContext.destination);
+
+                    oscillator.frequency.value = freq;
+                    oscillator.type = type;
+
+                    // 音量包络
+                    gainNode.gain.setValueAtTime(volume, startTime);
+                    gainNode.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+
+                    oscillator.start(startTime);
+                    oscillator.stop(startTime + duration);
+                };
+
+                const now = audioContext.currentTime;
+
+                // 根据不同类型播放不同的声音
+                switch(currentSoundType) {
+                    case 'ding':
+                        // 叮叮叮 - 三声连续提示
+                        for (let i = 0; i < 3; i++) {
+                            playNote(880, now + i * 0.4, 0.3, 'sine', 0.3);
+                        }
+                        break;
+
+                    case 'chime':
+                        // 清脆铃声 - 两声高低搭配
+                        playNote(1174.66, now, 0.5, 'sine', 0.35); // D6
+                        playNote(1318.51, now + 0.3, 0.6, 'sine', 0.3); // E6
+                        playNote(1760, now + 0.6, 0.7, 'sine', 0.25); // A6
+                        break;
+
+                    case 'gentle':
+                        // 温柔提示 - 缓慢上升的柔和音
+                        playNote(523.25, now, 0.6, 'sine', 0.25); // C5
+                        playNote(659.25, now + 0.5, 0.6, 'sine', 0.25); // E5
+                        playNote(783.99, now + 1.0, 0.8, 'sine', 0.25); // G5
+                        break;
+
+                    case 'attention':
+                        // 注意提醒 - 两声短促有力的提示
+                        playNote(880, now, 0.2, 'square', 0.2);
+                        playNote(1100, now + 0.25, 0.25, 'square', 0.2);
+                        break;
+
+                    default:
+                        // 默认叮叮叮
+                        for (let i = 0; i < 3; i++) {
+                            playNote(880, now + i * 0.4, 0.3, 'sine', 0.3);
+                        }
+                }
+
+            } catch (error) {
+                console.error('播放声音失败:', error);
+            }
+        }
+
+        // 测试声音
+        function testSound() {
+            playReminderSound();
+        }
+
+        // 解析输入并创建提醒
+        function parseAndCreateReminder() {
+            const input = document.getElementById('dietInput').value.trim();
+            if (!input) {
+                alert('请输入饮食计划');
+                return;
+            }
+
+            const lines = input.split('\n').filter(line => line.trim());
+            const newReminders = [];
+            let currentDayOffset = 0;
+
+            lines.forEach(line => {
+                // 检查是否是Day X标记
+                const dayMatch = line.match(/Day\s*(\d+)/i);
+                if (dayMatch) {
+                    currentDayOffset = parseInt(dayMatch[1]) - 1;
+                    return;
+                }
+
+                const reminder = parseDietLine(line.trim(), currentDayOffset);
+                if (reminder) {
+                    newReminders.push(reminder);
+                }
+            });
+
+            if (newReminders.length === 0) {
+                alert('未能识别到有效的饮食计划，请检查格式');
+                return;
+            }
+
+            reminders = [...reminders, ...newReminders];
+            saveReminders();
+            renderReminders();
+            clearInput();
+
+            alert(`成功创建 ${newReminders.length} 个饮食提醒！\n提醒已分配到接下来的 ${currentDayOffset + 1} 天。`);
+        }
+
+        // 解析单行饮食计划
+        function parseDietLine(line, dayOffset = 0) {
+            const now = new Date();
+            const baseDate = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // 当天午夜
+            // 识别餐别
+            let mealType = 'meal';
+            for (const [type, keywords] of Object.entries(mealKeywords)) {
+                for (const keyword of keywords) {
+                    if (line.includes(keyword)) {
+                        mealType = type;
+                        break;
+                    }
+                }
+            }
+
+            // 识别时间
+            const timeMatch = line.match(/(\d{1,2}):(\d{2})/);
+            const hourMatch = line.match(/(\d{1,2})点/);
+            const hourMatch2 = line.match(/(\d{1,2})时/);
+
+            let hours, minutes = 0;
+            let timeStr = '';
+
+            if (timeMatch) {
+                hours = parseInt(timeMatch[1]);
+                minutes = parseInt(timeMatch[2]);
+                timeStr = timeMatch[0];
+            } else if (hourMatch) {
+                hours = parseInt(hourMatch[1]);
+                timeStr = hourMatch[0];
+            } else if (hourMatch2) {
+                hours = parseInt(hourMatch2[1]);
+                timeStr = hourMatch2[0];
+            }
+
+            if (hours === undefined) {
+                return null; // 没有识别到时间
+            }
+
+            // 计算提醒时间 - 使用基准日期（归零到午夜）
+            const reminderTime = new Date(baseDate.getTime());
+            reminderTime.setHours(hours, minutes, 0, 0);
+
+            // 根据dayOffset添加对应的天数
+            reminderTime.setDate(reminderTime.getDate() + dayOffset);
+
+            // 如果是今天（dayOffset=0）且时间已过，不自动调整
+            // 让用户自己决定是否要删除或编辑
+
+            // 提取食物内容
+            let content = line
+                .replace(/(\d{1,2}:\d{2})/, '')
+                .replace(/(\d{1,2})点/, '')
+                .replace(/(\d{1,2})时/, '')
+                .replace(/早餐|早饭|早上|晨|早|午餐|午饭|中午|午|晚餐|晚饭|晚上|夜|晚|点心|零食|加餐|下午茶|夜宵/g, '')
+                .replace(/明天|后天|今天/g, '')
+                .replace(/\s+/g, ' ')
+                .trim();
+
+            if (!content) {
+                content = '记得用餐';
+            }
+
+            return {
+                id: Date.now() + Math.random(),
+                mealType,
+                content,
+                reminderTime: reminderTime.getTime(),
+                active: true,
+                notified: false,
+                dayIndex: dayOffset // 保存是第几天
+            };
+        }
+
+        // 渲染提醒列表
+        function renderReminders() {
+            const container = document.getElementById('remindersContainer');
+            const dayLabel = document.getElementById('currentDayLabel');
+
+            if (reminders.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+                        </svg>
+                        <p>暂无饮食提醒，开始添加你的第一个计划吧！</p>
+                    </div>
+                `;
+                dayLabel.textContent = '今天';
+                return;
+            }
+
+            // 更新当前天标签
+            dayLabel.textContent = currentViewDay === 0 ? '今天' : `Day ${currentViewDay + 1}`;
+
+            // 按天分组
+            const sortedReminders = [...reminders].sort((a, b) => a.reminderTime - b.reminderTime);
+            const groups = {};
+
+            sortedReminders.forEach(reminder => {
+                const date = new Date(reminder.reminderTime);
+                const dateStr = date.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
+                const dayIndex = reminder.dayIndex !== undefined ? reminder.dayIndex : 0;
+
+                if (!groups[dayIndex]) {
+                    groups[dayIndex] = {
+                        dateStr,
+                        dayLabel: dayIndex === 0 ? '今天' : `Day ${dayIndex + 1}`,
+                        reminders: []
+                    };
+                }
+                groups[dayIndex].reminders.push(reminder);
+            });
+
+            // 显示当前天
+            const group = groups[currentViewDay];
+
+            if (group && group.reminders.length > 0) {
+                // 只按时间排序
+                const sortedDayReminders = group.reminders.sort((a, b) => a.reminderTime - b.reminderTime);
+
+                let mealsHtml = sortedDayReminders.map(reminder => {
+                    const date = new Date(reminder.reminderTime);
+                    const timeStr = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                    const displayMealType = formatMealType(reminder.mealType);
+                    const hasContent = reminder.content && reminder.content.trim() !== '';
+
+                    return `
+                        <div class="day-meal-card ${!hasContent ? 'day-meal-card-compact' : ''}">
+                            <div class="day-meal-type" onclick="openEditModal(${reminder.id})" title="点击编辑">${displayMealType}</div>
+                            <div class="day-meal-time" onclick="openEditModal(${reminder.id})" title="点击编辑">${timeStr}</div>
+                            ${hasContent ? `<div class="day-meal-content" onclick="openEditModal(${reminder.id})" title="点击编辑">${reminder.content}</div>` : ''}
+                            <div class="day-meal-status ${reminder.active ? 'active' : 'inactive'}">
+                                ${reminder.active ? '已启用' : '已禁用'}
+                            </div>
+                            <div class="day-meal-actions">
+                                <button class="btn" onclick="openEditModal(${reminder.id})">编辑</button>
+                                <button class="btn btn-secondary" onclick="toggleReminder(${reminder.id})">
+                                    ${reminder.active ? '禁用' : '启用'}
+                                </button>
+                                <button class="btn btn-danger" onclick="deleteReminder(${reminder.id})">删除</button>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                container.innerHTML = `
+                    <div class="day-view">
+                        <div class="day-view-header">
+                            ${group.dayLabel} - ${group.dateStr}
+                        </div>
+                        <div class="day-meals-horizontal">
+                            ${mealsHtml}
+                        </div>
+                    </div>
+                `;
+            } else {
+                container.innerHTML = `
+                    <div class="day-view">
+                        <div class="day-view-header">
+                            ${currentViewDay === 0 ? '今天' : `Day ${currentViewDay + 1}`}
+                        </div>
+                        <div class="empty-state">
+                            <p>这一天没有设置饮食计划</p>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // 切换整天的提醒
+        function toggleDay(dayIndex) {
+            reminders = reminders.map(r =>
+                r.dayIndex === dayIndex ? { ...r, active: !r.active } : r
+            );
+            saveReminders();
+            renderReminders();
+        }
+
+        // 删除整天的提醒
+        function deleteDay(dayIndex) {
+            reminders = reminders.filter(r => r.dayIndex !== dayIndex);
+            saveReminders();
+            renderReminders();
+        }
+
+        // 打开编辑弹窗
+        function openEditModal(reminderId) {
+            const reminder = reminders.find(r => r.id === reminderId);
+            if (!reminder) return;
+
+            editingReminderId = reminderId;
+
+            const date = new Date(reminder.reminderTime);
+            const hours = date.getHours().toString().padStart(2, '0');
+            const minutes = date.getMinutes().toString().padStart(2, '0');
+
+            document.getElementById('editMealType').value = reminder.mealType;
+            document.getElementById('editTime').value = `${hours}:${minutes}`;
+            document.getElementById('editContent').value = reminder.content;
+
+            document.getElementById('editModal').classList.add('show');
+        }
+
+        // 获取餐别图标
+        function getMealIcon(mealType) {
+            if (mealType.includes('早餐') || mealType.includes('早')) return '🥚';
+            if (mealType.includes('午餐') || mealType.includes('午')) return '🍚';
+            if (mealType.includes('晚餐') || mealType.includes('晚')) return '🍲';
+            if (mealType.includes('点') || mealType.includes('果')) return '🍎';
+            if (mealType.includes('水')) return '💧';
+            if (mealType.includes('运动') || mealType.includes('动')) return '🏃';
+            if (mealType.includes('药')) return '💊';
+            if (mealType.includes('零食')) return '🥤';
+            return '🍽️';
+        }
+
+        // 转换餐别为中文显示
+        function formatMealType(mealType) {
+            if (mealType === 'breakfast') return '🥚 早餐';
+            if (mealType === 'lunch') return '🍚 午餐';
+            if (mealType === 'dinner') return '🍲 晚餐';
+            if (mealType === 'snack') return '🍎 点心/果蔬汁';
+            // 如果已经是中文，直接返回
+            return mealType;
+        }
+
+        // 关闭编辑弹窗
+        function closeEditModal() {
+            document.getElementById('editModal').classList.remove('show');
+            editingReminderId = null;
+        }
+
+        // 打开添加提醒弹窗
+        function openAddReminderModal() {
+            document.getElementById('addMealType').value = '';
+            document.getElementById('addContent').value = '';
+
+            const now = new Date();
+            const hours = now.getHours().toString().padStart(2, '0');
+            const minutes = now.getMinutes().toString().padStart(2, '0');
+            document.getElementById('addTime').value = `${hours}:${minutes}`;
+
+            document.getElementById('addReminderModal').classList.add('show');
+        }
+
+        // 关闭添加提醒弹窗
+        function closeAddReminderModal() {
+            document.getElementById('addReminderModal').classList.remove('show');
+        }
+
+        // 保存新提醒
+        function saveAddReminder() {
+            const mealType = document.getElementById('addMealType').value.trim();
+            const timeValue = document.getElementById('addTime').value;
+            const content = document.getElementById('addContent').value.trim();
+
+            if (!mealType) {
+                alert('请输入餐别');
+                return;
+            }
+
+            if (!timeValue) {
+                alert('请选择时间');
+                return;
+            }
+
+            const [hours, minutes] = timeValue.split(':').map(Number);
+
+            // 使用当前查看的天数来计算提醒时间
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            const reminderTime = new Date(today.getTime());
+            reminderTime.setDate(reminderTime.getDate() + currentViewDay);
+            reminderTime.setHours(hours, minutes, 0, 0);
+
+            const newReminder = {
+                id: Date.now() + Math.random(),
+                mealType,
+                content,
+                reminderTime: reminderTime.getTime(),
+                active: true,
+                notified: false,
+                dayIndex: currentViewDay
+            };
+
+            reminders.push(newReminder);
+            saveReminders();
+
+            renderReminders();
+            closeAddReminderModal();
+            alert('提醒添加成功！');
+        }
+
+        // 保存编辑
+        function saveEdit() {
+            if (editingReminderId === null) return;
+
+            const mealType = document.getElementById('editMealType').value.trim();
+            const timeValue = document.getElementById('editTime').value;
+            const content = document.getElementById('editContent').value.trim();
+
+            if (!mealType) {
+                alert('请输入餐别');
+                return;
+            }
+
+            if (!timeValue) {
+                alert('请选择时间');
+                return;
+            }
+
+            const [hours, minutes] = timeValue.split(':').map(Number);
+
+            // 更新提醒
+            reminders = reminders.map(r => {
+                if (r.id === editingReminderId) {
+                    const reminderTime = new Date(r.reminderTime);
+                    reminderTime.setHours(hours, minutes, 0, 0);
+                    return {
+                        ...r,
+                        mealType,
+                        content,
+                        reminderTime: reminderTime.getTime()
+                    };
+                }
+                return r;
+            });
+
+            saveReminders();
+            renderReminders();
+            closeEditModal();
+        }
+
+        // 清除所有提醒
+        function clearAllReminders() {
+            if (confirm('确定要清除所有饮食提醒吗？此操作不可恢复！')) {
+                reminders = [];
+                currentViewDay = 0;
+                localStorage.removeItem('dietReminders');
+                renderReminders();
+                alert('所有提醒已清除');
+            }
+        }
+
+        // 重置所有已通知状态（用于测试）
+        function resetNotifications() {
+            reminders = reminders.map(r => ({ ...r, notified: false }));
+            saveReminders();
+            renderReminders();
+            alert('已重置所有提醒状态，准备重新触发提醒');
+        }
+
+        // 查看提醒详情
+        function showRemindersInfo() {
+            if (reminders.length === 0) {
+                alert('暂无提醒');
+                return;
+            }
+
+            const now = new Date();
+            const mealTypeNames = {
+                breakfast: '早餐',
+                lunch: '午餐',
+                dinner: '晚餐',
+                snack: '点心'
+            };
+
+            let info = '=== 饮食提醒详情 ===\n\n';
+
+            const sortedReminders = [...reminders].sort((a, b) => a.reminderTime - b.reminderTime);
+            const groups = {};
+
+            sortedReminders.forEach(reminder => {
+                const dayIndex = reminder.dayIndex !== undefined ? reminder.dayIndex : 0;
+                if (!groups[dayIndex]) {
+                    groups[dayIndex] = [];
+                }
+                groups[dayIndex].push(reminder);
+            });
+
+            for (let i = 0; i < 7; i++) {
+                if (groups[i]) {
+                    info += `${i === 0 ? '今天' : 'Day ' + (i + 1)}:\n`;
+                    groups[i].forEach(r => {
+                        const date = new Date(r.reminderTime);
+                        const timeStr = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                        const dateStr = date.toLocaleDateString('zh-CN', { month: 'short', day: 'numeric' });
+                        const diff = Math.round((r.reminderTime - now.getTime()) / 1000 / 60); // 分钟差
+
+                        info += `  ${timeStr} (${dateStr}) - ${mealTypeNames[r.mealType] || '用餐'}: ${r.content}\n`;
+                        info += `  状态: ${r.active ? '已启用' : '已禁用'}, 距离提醒: ${diff > 0 ? diff + '分钟后' : '已过期'}\n\n`;
+                    });
+                }
+            }
+
+            alert(info);
+        }
+
+        // 切换提醒状态
+        function toggleReminder(id) {
+            reminders = reminders.map(r =>
+                r.id === id ? { ...r, active: !r.active } : r
+            );
+            saveReminders();
+            renderReminders();
+        }
+
+        // 删除提醒
+        function deleteReminder(id) {
+            reminders = reminders.filter(r => r.id !== id);
+            saveReminders();
+            renderReminders();
+        }
+
+        // 保存提醒到本地存储
+        function saveReminders() {
+            localStorage.setItem('dietReminders', JSON.stringify(reminders));
+        }
+
+        // 检查提醒
+        function checkReminders() {
+            const now = Date.now();
+            reminders.forEach(reminder => {
+                if (reminder.active && !reminder.notified) {
+                    if (now >= reminder.reminderTime) {
+                        showNotification(reminder);
+                        reminder.notified = true;
+                        saveReminders();
+                    }
+                }
+            });
+        }
+
+        // 显示通知
+        function showNotification(reminder) {
+            const icon = getMealIcon(reminder.mealType);
+            const displayMealType = formatMealType(reminder.mealType);
+            const title = `⏰ ${displayMealType}时间到了！`;
+            const message = reminder.content;
+
+            // 播放提醒声音
+            playReminderSound();
+
+            // 浏览器通知
+            if (Notification.permission === 'granted') {
+                new Notification(title, {
+                    body: message,
+                    icon: icon,
+                    requireInteraction: true
+                });
+            }
+
+            // 页面内通知
+            document.getElementById('notificationText').textContent = message;
+            document.getElementById('notificationBanner').classList.add('show');
+        }
+
+        // 关闭通知
+        function closeNotification() {
+            document.getElementById('notificationBanner').classList.remove('show');
+        }
+
+        // 清空输入
+        function clearInput() {
+            document.getElementById('dietInput').value = '';
+        }
+
+        // 页面加载完成后初始化
+        window.onload = init;
+    </script>
+</body>
+</html>
