@@ -207,6 +207,7 @@
             transition: all 0.3s;
             display: flex;
             flex-direction: column;
+            position: relative;
         }
 
         .day-meal-card:hover {
@@ -296,6 +297,37 @@
         .day-meal-status.inactive {
             background: #f8d7da;
             color: #721c24;
+        }
+
+        .day-meal-notified {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4px 10px;
+            border-radius: 10px;
+            font-size: 0.7em;
+            font-weight: bold;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        .custom-music-info {
+            display: inline-block;
+            margin-left: 10px;
+            font-size: 0.85em;
+            color: #666;
+            max-width: 150px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .upload-progress {
+            display: none;
+            margin-left: 10px;
+            font-size: 0.85em;
+            color: #667eea;
         }
 
         .day-meal-actions {
@@ -565,14 +597,20 @@ Day 2
             <button class="btn btn-secondary" onclick="testSound()">🔊 测试声音</button>
             <div style="margin-left: 15px; display: inline-flex; align-items: center; gap: 10px;">
                 <select id="soundType" onchange="changeSoundType()" style="padding: 8px 12px; border-radius: 20px; border: 2px solid #e0e0e0;">
-                    <option value="ding">叮叮叮</option>
-                    <option value="chime">清脆铃声</option>
-                    <option value="gentle">温柔提示</option>
-                    <option value="attention">注意提醒</option>
+                    <option value="bell">优雅铃铛</option>
+                    <option value="piano">钢琴音符</option>
+                    <option value="chime">风铃</option>
+                    <option value="gentle">柔和提醒</option>
+                    <option value="ding">传统叮咚</option>
+                    <option value="attention">注意提示</option>
+                    <option value="custom">自定义音乐</option>
                 </select>
                 <span style="font-size: 0.9em; color: #666;">音量:</span>
                 <input type="range" id="volumeSlider" min="0" max="100" value="30" onchange="changeVolume()" oninput="changeVolume()" style="width: 100px; cursor: pointer;">
                 <span id="volumeValue" style="font-size: 0.9em; color: #666; min-width: 35px;">30%</span>
+                <button class="btn btn-secondary" onclick="document.getElementById('musicUpload').click()" style="padding: 8px 15px; font-size: 0.9em;">上传音乐</button>
+                <input type="file" id="musicUpload" accept="audio/*" style="display: none;" onchange="handleMusicUpload(event)">
+                <span id="uploadProgress" class="upload-progress"></span>
             </div>
         </div>
 
@@ -588,8 +626,10 @@ Day 2
             </ul>
             <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
                 <button class="btn btn-danger" onclick="clearAllReminders()">🗑️ 清除所有提醒</button>
+                <button class="btn btn-secondary" onclick="clearCustomMusic()">🗑️ 清除自定义音乐</button>
                 <button class="btn btn-secondary" onclick="showRemindersInfo()">📋 查看提醒详情</button>
                 <button class="btn btn-secondary" onclick="resetNotifications()">🔄 重置提醒状态</button>
+                <button class="btn btn-secondary" onclick="testStopAudio()">⏹️ 测试停止音频</button>
             </div>
         </div>
 
@@ -673,8 +713,15 @@ Day 2
         let reminders = JSON.parse(localStorage.getItem('dietReminders') || '[]');
         let currentViewDay = 0; // 当前查看的天数 (0-6)
         let editingReminderId = null; // 当前编辑的提醒ID
-        let currentSoundType = localStorage.getItem('reminderSoundType') || 'ding'; // 当前声音类型
+        let currentSoundType = localStorage.getItem('reminderSoundType') || 'bell'; // 当前声音类型
         let currentVolume = parseInt(localStorage.getItem('reminderVolume') || '30'); // 当前音量 (0-100)
+        let customAudioBuffer = null; // 自定义音频缓冲区
+        let customAudioName = ''; // 自定义音频文件名
+        let isAudioPlaying = false; // 音频是否正在播放
+        let currentTestAudioSource = null; // 当前测试音频源
+        let audioStartTime = 0; // 音频开始时间
+        let audioPausedTime = 0; // 音频暂停时间
+        let audioContext = null; // 音频上下文
 
         // 饮食相关关键词
         const mealKeywords = {
@@ -683,9 +730,6 @@ Day 2
             dinner: ['晚餐', '晚饭', '晚上', '夜', '晚'],
             snack: ['点心', '零食', '加餐', '下午茶', '夜宵']
         };
-
-        // 音频上下文
-        let audioContext = null;
         let notificationSound = null;
 
         // 初始化
@@ -702,6 +746,9 @@ Day 2
             if (savedSoundType) {
                 currentSoundType = savedSoundType;
                 document.getElementById('soundType').value = savedSoundType;
+            } else {
+                // 如果没有保存的设置，使用默认的"优雅铃铛"
+                document.getElementById('soundType').value = 'bell';
             }
 
             // 恢复用户设置的音量
@@ -710,6 +757,20 @@ Day 2
                 currentVolume = parseInt(savedVolume);
                 document.getElementById('volumeSlider').value = currentVolume;
                 document.getElementById('volumeValue').textContent = currentVolume + '%';
+            }
+
+            // 尝试加载已保存的自定义音乐
+            try {
+                const savedAudioData = localStorage.getItem('customReminderSound');
+                const savedAudioName = localStorage.getItem('customReminderSoundName');
+                
+                if (savedAudioData && savedAudioName) {
+                    // 这里不立即解码音频，只在需要时解码
+                    customAudioName = savedAudioName;
+                    updateCustomMusicInfo();
+                }
+            } catch (error) {
+                console.error('加载自定义音乐失败:', error);
             }
         }
 
@@ -751,7 +812,7 @@ Day 2
             const select = document.getElementById('soundType');
             currentSoundType = select.value;
             localStorage.setItem('reminderSoundType', currentSoundType);
-            testSound(); // 切换后立即测试新声音
+            // 移除自动播放测试声音，只有在点击测试按钮时才播放
         }
 
         // 切换音量
@@ -767,6 +828,10 @@ Day 2
             try {
                 // 创建音频上下文
                 audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+                if (!window.audioOscillators) {
+                    window.audioOscillators = [];
+                }
 
                 const playNote = (freq, startTime, duration, type = 'sine', baseVolume = 0.3) => {
                     const oscillator = audioContext.createOscillator();
@@ -787,44 +852,78 @@ Day 2
 
                     oscillator.start(startTime);
                     oscillator.stop(startTime + duration);
+                    
+                    // 保存振荡器以便后续停止
+                    window.audioOscillators.push(oscillator);
+                    
+                    // 播放完成后从数组中移除
+                    setTimeout(() => {
+                        const index = window.audioOscillators.indexOf(oscillator);
+                        if (index > -1) {
+                            window.audioOscillators.splice(index, 1);
+                        }
+                    }, (startTime + duration - audioContext.currentTime) * 1000 + 100);
                 };
 
                 const now = audioContext.currentTime;
 
                 // 根据不同类型播放不同的声音
                 switch(currentSoundType) {
-                    case 'ding':
-                        // 叮叮叮 - 三声连续提示
-                        for (let i = 0; i < 3; i++) {
-                            playNote(880, now + i * 0.4, 0.3, 'sine', 0.3);
-                        }
+                    case 'bell':
+                        // 优雅铃铛 - 清脆的钟声效果
+                        playNote(784, now, 0.8, 'sine', 0.3); // G5
+                        playNote(1046.5, now + 0.2, 0.6, 'sine', 0.25); // C6
+                        playNote(1318.5, now + 0.4, 0.4, 'sine', 0.2); // E6
+                        break;
+
+                    case 'piano':
+                        // 钢琴音符 - 简单的C大调和弦
+                        playNote(523.25, now, 0.6, 'sine', 0.2); // C5
+                        playNote(659.25, now + 0.1, 0.5, 'sine', 0.2); // E5
+                        playNote(783.99, now + 0.2, 0.4, 'sine', 0.2); // G5
                         break;
 
                     case 'chime':
-                        // 清脆铃声 - 两声高低搭配
-                        playNote(1174.66, now, 0.5, 'sine', 0.35); // D6
-                        playNote(1318.51, now + 0.3, 0.6, 'sine', 0.3); // E6
-                        playNote(1760, now + 0.6, 0.7, 'sine', 0.25); // A6
+                        // 风铃 - 轻柔的风铃效果
+                        playNote(1046.5, now, 0.5, 'sine', 0.25); // C6
+                        playNote(1174.66, now + 0.15, 0.4, 'sine', 0.2); // D6
+                        playNote(1318.51, now + 0.3, 0.3, 'sine', 0.15); // E6
                         break;
 
                     case 'gentle':
-                        // 温柔提示 - 缓慢上升的柔和音
-                        playNote(523.25, now, 0.6, 'sine', 0.25); // C5
-                        playNote(659.25, now + 0.5, 0.6, 'sine', 0.25); // E5
-                        playNote(783.99, now + 1.0, 0.8, 'sine', 0.25); // G5
+                        // 柔和提醒 - 渐强渐弱的柔和音
+                        playNote(440, now, 0.8, 'sine', 0.2); // A4
+                        playNote(523.25, now + 0.3, 0.7, 'sine', 0.2); // C5
+                        break;
+
+                    case 'ding':
+                        // 传统叮咚 - 两声清脆提示
+                        playNote(880, now, 0.3, 'sine', 0.3); // A5
+                        playNote(1046.5, now + 0.3, 0.3, 'sine', 0.25); // C6
                         break;
 
                     case 'attention':
-                        // 注意提醒 - 两声短促有力的提示
-                        playNote(880, now, 0.2, 'square', 0.2);
+                        // 注意提示 - 短促有力的提醒
+                        playNote(880, now, 0.2, 'square', 0.25);
                         playNote(1100, now + 0.25, 0.25, 'square', 0.2);
                         break;
 
-                    default:
-                        // 默认叮叮叮
-                        for (let i = 0; i < 3; i++) {
-                            playNote(880, now + i * 0.4, 0.3, 'sine', 0.3);
+                    case 'custom':
+                        // 播放自定义音乐（用于提醒触发，与测试功能分开）
+                        if (customAudioBuffer) {
+                            // 使用独立的播放逻辑，避免干扰测试功能
+                            playCustomReminderAudio();
+                        } else {
+                            // 如果没有自定义音乐，使用默认优雅铃铛
+                            playNote(784, now, 0.8, 'sine', 0.3); // G5
+                            playNote(1046.5, now + 0.2, 0.6, 'sine', 0.25); // C6
                         }
+                        break;
+
+                    default:
+                        // 默认优雅铃铛
+                        playNote(784, now, 0.8, 'sine', 0.3); // G5
+                        playNote(1046.5, now + 0.2, 0.6, 'sine', 0.25); // C6
                 }
 
             } catch (error) {
@@ -832,9 +931,445 @@ Day 2
             }
         }
 
-        // 测试声音
+        // 播放自定义音频（用于提醒触发）
+        function playCustomAudio() {
+            try {
+                // 如果音频缓冲区不存在，尝试从localStorage加载
+                if (!customAudioBuffer) {
+                    const savedAudioData = localStorage.getItem('customReminderSound');
+                    if (!savedAudioData) {
+                        alert('请先上传自定义音乐！\n\n点击"上传自定义音乐"按钮选择音频文件。');
+                        return;
+                    }
+                    
+                    // 解码音频数据
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    audioContext.decodeAudioData(
+                        base64ToArrayBuffer(savedAudioData),
+                        function(buffer) {
+                            customAudioBuffer = buffer;
+                            // 递归调用以播放音频
+                            playCustomAudio();
+                        },
+                        function(error) {
+                            console.error('音频解码失败:', error);
+                            alert('音频文件解码失败，请重新上传');
+                        }
+                    );
+                    return;
+                }
+
+                // 创建音频上下文（如果尚未创建）
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                
+                const source = audioContext.createBufferSource();
+                source.buffer = customAudioBuffer;
+                
+                // 创建增益节点以控制音量
+                const gainNode = audioContext.createGain();
+                gainNode.gain.value = currentVolume / 100;
+                
+                source.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                source.start(0);
+                
+                // 保存音频源以便后续停止
+                if (!window.customAudioSources) {
+                    window.customAudioSources = [];
+                }
+                window.customAudioSources.push(source);
+                
+                // 播放完成后清理
+                source.onended = () => {
+                    source.disconnect();
+                    gainNode.disconnect();
+                    // 从数组中移除已结束的源
+                    if (window.customAudioSources) {
+                        const index = window.customAudioSources.indexOf(source);
+                        if (index > -1) {
+                            window.customAudioSources.splice(index, 1);
+                        }
+                    }
+                };
+                
+            } catch (error) {
+                console.error('播放自定义音乐失败:', error);
+                alert('播放自定义音乐失败，请检查文件格式');
+            }
+        }
+
+        // 播放自定义提醒音频（独立于测试功能）
+        function playCustomReminderAudio() {
+            try {
+                // 如果音频缓冲区不存在，尝试从localStorage加载
+                if (!customAudioBuffer) {
+                    const savedAudioData = localStorage.getItem('customReminderSound');
+                    if (!savedAudioData) {
+                        // 提醒触发时不需要提示，直接使用默认铃声
+                        return;
+                    }
+                    
+                    // 解码音频数据
+                    const tempAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    tempAudioContext.decodeAudioData(
+                        base64ToArrayBuffer(savedAudioData),
+                        function(buffer) {
+                            customAudioBuffer = buffer;
+                            // 递归调用以播放音频
+                            playCustomReminderAudio();
+                        },
+                        function(error) {
+                            console.error('音频解码失败:', error);
+                        }
+                    );
+                    return;
+                }
+
+                // 创建临时音频上下文（避免干扰测试功能）
+                const tempAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+                
+                const source = tempAudioContext.createBufferSource();
+                source.buffer = customAudioBuffer;
+                
+                // 创建增益节点以控制音量
+                const gainNode = tempAudioContext.createGain();
+                gainNode.gain.value = currentVolume / 100;
+                
+                source.connect(gainNode);
+                gainNode.connect(tempAudioContext.destination);
+                
+                source.start(0);
+                
+                // 保存音频源以便后续停止
+                if (!window.reminderAudioSources) {
+                    window.reminderAudioSources = [];
+                }
+                window.reminderAudioSources.push(source);
+                
+                // 播放完成后清理
+                source.onended = () => {
+                    source.disconnect();
+                    gainNode.disconnect();
+                    
+                    // 从数组中移除已结束的源
+                    if (window.reminderAudioSources) {
+                        const index = window.reminderAudioSources.indexOf(source);
+                        if (index > -1) {
+                            window.reminderAudioSources.splice(index, 1);
+                        }
+                    }
+                    
+                    // 关闭临时音频上下文
+                    tempAudioContext.close();
+                };
+                
+            } catch (error) {
+                console.error('播放自定义提醒音乐失败:', error);
+            }
+        }
+
+        // 将Base64字符串转换为ArrayBuffer
+        function base64ToArrayBuffer(base64) {
+            const binaryString = atob(base64);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+        }
+
+        // 将ArrayBuffer转换为Base64字符串
+        function arrayBufferToBase64(buffer) {
+            let binary = '';
+            const bytes = new Uint8Array(buffer);
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            return btoa(binary);
+        }
+
+        // 处理音乐上传
+        function handleMusicUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // 检查文件类型
+            if (!file.type.startsWith('audio/')) {
+                alert('请选择音频文件（MP3、WAV、OGG等）');
+                return;
+            }
+
+            // 检查文件大小（限制为5MB）
+            if (file.size > 5 * 1024 * 1024) {
+                alert('文件太大，请选择小于5MB的音频文件');
+                return;
+            }
+
+            // 显示上传进度
+            const progressSpan = document.getElementById('uploadProgress');
+            if (progressSpan) {
+                progressSpan.style.display = 'inline';
+                progressSpan.textContent = '处理中...';
+            }
+
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                try {
+                    // 解码音频文件
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    audioContext.decodeAudioData(e.target.result, function(buffer) {
+                        // 保存音频缓冲区
+                        customAudioBuffer = buffer;
+                        customAudioName = file.name;
+                        
+                        // 保存到本地存储（使用Base64编码）
+                        const audioData = arrayBufferToBase64(e.target.result);
+                        localStorage.setItem('customReminderSound', audioData);
+                        localStorage.setItem('customReminderSoundName', customAudioName);
+                        
+                        // 自动切换到自定义音乐选项
+                        currentSoundType = 'custom';
+                        localStorage.setItem('reminderSoundType', 'custom');
+                        document.getElementById('soundType').value = 'custom';
+                        
+                        // 更新显示信息
+                        updateCustomMusicInfo();
+                        
+                        // 隐藏进度
+                        if (progressSpan) {
+                            progressSpan.style.display = 'none';
+                        }
+                        
+                        // 不再自动播放，让用户自己点击测试按钮播放
+                        // testSound(); // 移除自动播放
+                        
+                        alert(`自定义音乐 "${file.name}" 上传成功！\n\n现在您可以在铃声选项中选择"自定义音乐"，然后点击"测试声音"按钮来试听。`);
+                    }, function(error) {
+                        console.error('音频解码失败:', error);
+                        alert('音频文件解码失败，请检查文件格式');
+                        if (progressSpan) {
+                            progressSpan.style.display = 'none';
+                        }
+                    });
+                    
+                } catch (error) {
+                    console.error('处理音频文件失败:', error);
+                    alert('处理音频文件失败，请检查文件格式');
+                    if (progressSpan) {
+                        progressSpan.style.display = 'none';
+                    }
+                }
+            };
+            
+            reader.onerror = function() {
+                alert('读取文件失败');
+                if (progressSpan) {
+                    progressSpan.style.display = 'none';
+                }
+            };
+            
+            reader.readAsArrayBuffer(file);
+        }
+
+        // 更新自定义音乐信息显示
+        function updateCustomMusicInfo() {
+            let infoSpan = document.getElementById('customMusicInfo');
+            if (!infoSpan) {
+                // 创建信息显示元素
+                infoSpan = document.createElement('span');
+                infoSpan.id = 'customMusicInfo';
+                infoSpan.className = 'custom-music-info';
+                document.querySelector('.input-section').appendChild(infoSpan);
+            }
+            
+            if (customAudioName) {
+                infoSpan.textContent = `当前: ${customAudioName}`;
+                infoSpan.title = customAudioName;
+            } else {
+                infoSpan.textContent = '';
+            }
+        }
+
+        // 测试声音 - 播放/暂停切换
         function testSound() {
-            playReminderSound();
+            // 如果正在播放，则暂停
+            if (isAudioPlaying) {
+                pauseTestAudio();
+                return;
+            }
+            
+            // 检查如果选择的是自定义音乐但还没有上传
+            if (currentSoundType === 'custom' && !customAudioBuffer) {
+                const savedAudioData = localStorage.getItem('customReminderSound');
+                if (!savedAudioData) {
+                    alert('请先上传自定义音乐！\n\n点击"上传自定义音乐"按钮选择音频文件。');
+                    
+                    // 自动切换到默认铃声，避免用户困惑
+                    currentSoundType = 'bell';
+                    localStorage.setItem('reminderSoundType', 'bell');
+                    document.getElementById('soundType').value = 'bell';
+                    
+                    return;
+                }
+            }
+            
+            // 开始播放
+            playTestAudio();
+        }
+
+        // 播放测试音频
+        function playTestAudio() {
+            // 先停止任何正在播放的音频
+            stopAllAudio();
+            
+            // 更新播放状态
+            isAudioPlaying = true;
+            
+            // 更新按钮文本
+            const testButton = document.querySelector('button[onclick="testSound()"]');
+            if (testButton) {
+                testButton.innerHTML = '⏸️ 暂停声音';
+            }
+            
+            // 根据当前声音类型播放不同的音频
+            if (currentSoundType === 'custom') {
+                // 播放自定义音乐
+                playCustomTestAudio();
+            } else {
+                // 播放预设铃声
+                playReminderSound();
+                
+                // 预设铃声是短暂的，播放完成后自动更新状态
+                setTimeout(() => {
+                    isAudioPlaying = false;
+                    const testButton = document.querySelector('button[onclick="testSound()"]');
+                    if (testButton) {
+                        testButton.innerHTML = '🔊 测试声音';
+                    }
+                }, 2000); // 预设铃声大约2秒
+            }
+        }
+
+        // 暂停测试音频
+        function pauseTestAudio() {
+            // 更新播放状态
+            isAudioPlaying = false;
+            
+            // 更新按钮文本
+            const testButton = document.querySelector('button[onclick="testSound()"]');
+            if (testButton) {
+                testButton.innerHTML = '🔊 测试声音';
+            }
+            
+            // 停止所有音频
+            stopAllAudio();
+            
+            // 重置自定义音频播放位置
+            if (currentSoundType === 'custom') {
+                audioPausedTime = 0;
+                currentTestAudioSource = null;
+            }
+        }
+
+        // 播放自定义测试音频（支持暂停/恢复）
+        function playCustomTestAudio() {
+            try {
+                if (!customAudioBuffer) {
+                    const savedAudioData = localStorage.getItem('customReminderSound');
+                    if (!savedAudioData) {
+                        alert('请先上传自定义音乐！\n\n点击"上传自定义音乐"按钮选择音频文件。');
+                        isAudioPlaying = false;
+                        return;
+                    }
+                    
+                    // 解码音频数据
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    
+                    audioContext.decodeAudioData(
+                        base64ToArrayBuffer(savedAudioData),
+                        function(buffer) {
+                            customAudioBuffer = buffer;
+                            // 递归调用以播放音频
+                            playCustomTestAudio();
+                        },
+                        function(error) {
+                            console.error('音频解码失败:', error);
+                            alert('音频文件解码失败，请重新上传');
+                            isAudioPlaying = false;
+                        }
+                    );
+                    return;
+                }
+
+                // 创建音频上下文（如果尚未创建）
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                
+                // 创建新的音频源
+                currentTestAudioSource = audioContext.createBufferSource();
+                currentTestAudioSource.buffer = customAudioBuffer;
+                
+                // 创建增益节点以控制音量
+                const gainNode = audioContext.createGain();
+                gainNode.gain.value = currentVolume / 100;
+                
+                currentTestAudioSource.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+                
+                // 计算开始播放的时间
+                const startTime = audioPausedTime > 0 ? audioPausedTime : 0;
+                currentTestAudioSource.start(0, startTime);
+                
+                // 记录开始时间
+                audioStartTime = audioContext.currentTime - startTime;
+                
+                // 保存音频源以便后续停止
+                if (!window.customAudioSources) {
+                    window.customAudioSources = [];
+                }
+                window.customAudioSources.push(currentTestAudioSource);
+                
+                // 播放完成后清理
+                currentTestAudioSource.onended = () => {
+                    if (currentTestAudioSource) {
+                        currentTestAudioSource.disconnect();
+                    }
+                    gainNode.disconnect();
+                    
+                    // 从数组中移除已结束的源
+                    if (window.customAudioSources) {
+                        const index = window.customAudioSources.indexOf(currentTestAudioSource);
+                        if (index > -1) {
+                            window.customAudioSources.splice(index, 1);
+                        }
+                    }
+                    
+                    // 更新播放状态
+                    isAudioPlaying = false;
+                    audioPausedTime = 0;
+                    currentTestAudioSource = null;
+                    
+                    // 更新按钮文本
+                    const testButton = document.querySelector('button[onclick="testSound()"]');
+                    if (testButton) {
+                        testButton.innerHTML = '🔊 测试声音';
+                    }
+                };
+                
+            } catch (error) {
+                console.error('播放自定义音乐失败:', error);
+                alert('播放自定义音乐失败，请检查文件格式');
+                isAudioPlaying = false;
+            }
         }
 
         // 解析输入并创建提醒
@@ -874,6 +1409,9 @@ Day 2
             clearInput();
 
             alert(`成功创建 ${newReminders.length} 个饮食提醒！\n提醒已分配到接下来的 ${currentDayOffset + 1} 天。`);
+
+            // 创建提醒后立即静默检查一次，标记已过期的提醒为已通知（不显示弹窗）
+            checkReminders(true);
         }
 
         // 解析单行饮食计划
@@ -1035,6 +1573,7 @@ Day 2
 
                     return `
                         <div class="day-meal-card ${!hasContent ? 'day-meal-card-compact' : ''}">
+                            ${reminder.notified ? '<div class="day-meal-notified">已提醒</div>' : ''}
                             <div class="day-meal-type" onclick="openEditModal(${reminder.id})" title="点击编辑">${displayMealType}</div>
                             <div class="day-meal-time" onclick="openEditModal(${reminder.id})" title="点击编辑">${timeStr}</div>
                             ${hasContent ? `<div class="day-meal-content" onclick="openEditModal(${reminder.id})" title="点击编辑">${reminder.content}</div>` : ''}
@@ -1191,7 +1730,6 @@ Day 2
 
             renderReminders();
             closeAddReminderModal();
-            alert('提醒添加成功！');
         }
 
         // 保存编辑
@@ -1232,6 +1770,29 @@ Day 2
             saveReminders();
             renderReminders();
             closeEditModal();
+
+            // 编辑后立即静默检查一次，标记已过期的提醒为已通知（不显示弹窗）
+            checkReminders(true);
+        }
+
+        // 清除自定义音乐
+        function clearCustomMusic() {
+            if (confirm('确定要清除自定义音乐吗？此操作不可恢复！')) {
+                customAudioBuffer = null;
+                customAudioName = '';
+                localStorage.removeItem('customReminderSound');
+                localStorage.removeItem('customReminderSoundName');
+                
+                // 如果当前使用的是自定义音乐，切换回默认
+                if (currentSoundType === 'custom') {
+                    currentSoundType = 'bell';
+                    localStorage.setItem('reminderSoundType', 'bell');
+                    document.getElementById('soundType').value = 'bell';
+                }
+                
+                updateCustomMusicInfo();
+                alert('自定义音乐已清除');
+            }
         }
 
         // 清除所有提醒
@@ -1240,6 +1801,9 @@ Day 2
                 reminders = [];
                 currentViewDay = 0;
                 localStorage.removeItem('dietReminders');
+                // 同时清除其他保存的设置
+                localStorage.removeItem('reminderSoundType');
+                localStorage.removeItem('reminderVolume');
                 renderReminders();
                 alert('所有提醒已清除');
             }
@@ -1321,21 +1885,36 @@ Day 2
         }
 
         // 检查提醒
-        function checkReminders() {
+        function checkReminders(silent = false) {
             const now = Date.now();
+            let hasNewNotification = false;
+            let notificationReminders = [];
+            
             reminders.forEach(reminder => {
                 if (reminder.active && !reminder.notified) {
                     if (now >= reminder.reminderTime) {
-                        // 只有当弹窗没有显示时才播放声音和显示通知
-                        const banner = document.getElementById('notificationBanner');
-                        if (!banner.classList.contains('show')) {
-                            showNotification(reminder);
-                        }
+                        // 立即标记为已通知
                         reminder.notified = true;
-                        saveReminders();
+                        hasNewNotification = true;
+                        notificationReminders.push(reminder);
                     }
                 }
             });
+            
+            // 如果有新的提醒被标记，保存到本地存储
+            if (hasNewNotification) {
+                saveReminders();
+                // 立即更新UI显示"已提醒"标识
+                renderReminders();
+                
+                // 如果不是静默模式，显示通知弹窗（只显示第一个到期的提醒）
+                if (!silent && notificationReminders.length > 0) {
+                    const banner = document.getElementById('notificationBanner');
+                    if (!banner.classList.contains('show')) {
+                        showNotification(notificationReminders[0]);
+                    }
+                }
+            }
         }
 
         // 显示通知
@@ -1350,26 +1929,148 @@ Day 2
 
             // 浏览器通知
             if (Notification.permission === 'granted') {
-                new Notification(title, {
-                    body: message,
+                window.lastNotification = new Notification(title, {
+                    body: `${displayMealType} - ${message}`,
                     icon: icon,
                     requireInteraction: true
                 });
             }
 
             // 页面内通知
-            document.getElementById('notificationText').textContent = message;
+            document.getElementById('notificationText').innerHTML = `<strong>${displayMealType}</strong><br>${message}`;
             document.getElementById('notificationBanner').classList.add('show');
         }
 
         // 关闭通知
         function closeNotification() {
             document.getElementById('notificationBanner').classList.remove('show');
+            
+            // 停止所有正在播放的音频
+            stopAllAudio();
+            
+            // 关闭浏览器通知（如果存在）
+            if (window.lastNotification) {
+                try {
+                    window.lastNotification.close();
+                    window.lastNotification = null;
+                } catch (error) {
+                    console.log('关闭浏览器通知时出错:', error);
+                }
+            }
+        }
+        
+        // 停止所有音频播放
+        function stopAllAudio() {
+            try {
+                // 更新测试音频播放状态
+                if (isAudioPlaying) {
+                    isAudioPlaying = false;
+                    
+                    // 更新测试按钮文本
+                    const testButton = document.querySelector('button[onclick="testSound()"]');
+                    if (testButton) {
+                        testButton.innerHTML = '🔊 测试声音';
+                    }
+                    
+                    // 记录暂停时间（如果是自定义音乐）
+                    if (currentSoundType === 'custom' && audioContext && currentTestAudioSource) {
+                        try {
+                            audioPausedTime = audioContext.currentTime - audioStartTime;
+                        } catch (e) {
+                            console.log('计算暂停时间时出错:', e);
+                            audioPausedTime = 0;
+                        }
+                    }
+                }
+                
+                // 停止Web Audio API生成的振荡器音频
+                if (window.audioOscillators) {
+                    window.audioOscillators.forEach(oscillator => {
+                        if (oscillator) {
+                            try {
+                                oscillator.stop();
+                                oscillator.disconnect();
+                            } catch (e) {
+                                console.log('停止振荡器时出错:', e);
+                            }
+                        }
+                    });
+                    window.audioOscillators = [];
+                }
+                
+                // 停止通过AudioContext播放的自定义音乐（测试音频）
+                if (window.customAudioSources) {
+                    window.customAudioSources.forEach(source => {
+                        if (source) {
+                            try {
+                                source.stop();
+                                source.disconnect();
+                            } catch (e) {
+                                console.log('停止测试音频源时出错:', e);
+                            }
+                        }
+                    });
+                    window.customAudioSources = [];
+                }
+                
+                // 停止通过AudioContext播放的提醒音频
+                if (window.reminderAudioSources) {
+                    window.reminderAudioSources.forEach(source => {
+                        if (source) {
+                            try {
+                                source.stop();
+                                source.disconnect();
+                            } catch (e) {
+                                console.log('停止提醒音频源时出错:', e);
+                            }
+                        }
+                    });
+                    window.reminderAudioSources = [];
+                }
+                
+                // 重置当前测试音频源
+                currentTestAudioSource = null;
+                
+                // 停止Web Audio API生成的音频上下文
+                if (audioContext) {
+                    try {
+                        audioContext.close();
+                        audioContext = null;
+                    } catch (e) {
+                        console.log('关闭音频上下文时出错:', e);
+                    }
+                }
+                
+                // 停止通过Audio元素播放的自定义音乐
+                const audioElements = document.querySelectorAll('audio');
+                audioElements.forEach(audio => {
+                    try {
+                        audio.pause();
+                        audio.currentTime = 0;
+                    } catch (e) {
+                        console.log('停止Audio元素时出错:', e);
+                    }
+                });
+                
+            } catch (error) {
+                console.error('停止音频时出错:', error);
+            }
         }
 
         // 清空输入
         function clearInput() {
             document.getElementById('dietInput').value = '';
+        }
+        
+        // 测试停止音频功能
+        function testStopAudio() {
+            // 先播放一个测试声音
+            testSound();
+            // 等待500毫秒后停止
+            setTimeout(() => {
+                stopAllAudio();
+                alert('音频已停止！');
+            }, 500);
         }
 
         // 页面加载完成后初始化
