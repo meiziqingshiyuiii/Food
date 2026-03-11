@@ -243,6 +243,7 @@
             margin-bottom: 8px;
             cursor: pointer;
             transition: color 0.3s;
+            text-align: center;
         }
 
         .day-meal-type:hover {
@@ -256,6 +257,7 @@
             margin-bottom: 12px;
             cursor: pointer;
             transition: color 0.3s;
+            text-align: center;
         }
 
         .day-meal-time:hover {
@@ -272,6 +274,7 @@
             overflow-wrap: break-word;
             cursor: pointer;
             transition: color 0.3s;
+            text-align: center;
         }
 
         .day-meal-content:hover {
@@ -298,14 +301,12 @@
         .day-meal-actions {
             margin-top: 15px;
             display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
+            justify-content: center;
         }
 
         .day-meal-actions button {
-            flex: 1;
             min-width: 80px;
-            padding: 8px 12px;
+            padding: 8px 30px;
             font-size: 0.85em;
         }
 
@@ -1037,14 +1038,7 @@ Day 2
                             <div class="day-meal-type" onclick="openEditModal(${reminder.id})" title="点击编辑">${displayMealType}</div>
                             <div class="day-meal-time" onclick="openEditModal(${reminder.id})" title="点击编辑">${timeStr}</div>
                             ${hasContent ? `<div class="day-meal-content" onclick="openEditModal(${reminder.id})" title="点击编辑">${reminder.content}</div>` : ''}
-                            <div class="day-meal-status ${reminder.active ? 'active' : 'inactive'}">
-                                ${reminder.active ? '已启用' : '已禁用'}
-                            </div>
                             <div class="day-meal-actions">
-                                <button class="btn" onclick="openEditModal(${reminder.id})">编辑</button>
-                                <button class="btn btn-secondary" onclick="toggleReminder(${reminder.id})">
-                                    ${reminder.active ? '禁用' : '启用'}
-                                </button>
                                 <button class="btn btn-danger" onclick="deleteReminder(${reminder.id})">删除</button>
                             </div>
                         </div>
