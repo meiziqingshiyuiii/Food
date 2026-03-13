@@ -3240,8 +3240,8 @@ Day 2
                 const angle = (displayHour * 15 + reminderMinutes * 0.25 - 90) * (Math.PI / 180);
                 const radius = 175; // 标记点距离中心的半径（移到表盘边缘，接近刻度）
 
-                const x = Math.cos(angle) * radius + 200;
-                const y = Math.sin(angle) * radius + 200;
+                const x = Math.cos(angle) * radius + 196;  // 往左移动4像素
+                const y = Math.sin(angle) * radius + 196;  // 往上移动4像素
 
                 const timeStr = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
                 const displayMealType = formatMealType(reminder.mealType);
