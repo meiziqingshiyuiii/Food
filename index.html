@@ -1732,6 +1732,20 @@ Day 2
             if (minuteHand) {
                 minuteHand.style.transform = `rotate(${minuteAngle}deg)`;
             }
+
+            // 更新扇形区域（已过去的时间）
+            const pastSector = document.querySelector('.clock-past-sector');
+            if (pastSector) {
+                const endX = 200 + 206 * Math.cos((hourAngle - 90) * Math.PI / 180);
+                const endY = 200 + 206 * Math.sin((hourAngle - 90) * Math.PI / 180);
+                const largeArcFlag = hourAngle > 180 ? 1 : 0;
+                pastSector.setAttribute('d', `
+                    M 200 200
+                    L 200 -6
+                    A 206 206 0 ${largeArcFlag} 1 ${endX} ${endY}
+                    Z
+                `);
+            }
         }
 
         // 更新表盘右侧的详细时间
