@@ -369,11 +369,22 @@
             max-width: 200px;
             cursor: pointer;
             transition: all 0.3s ease;
+            user-select: none;
         }
 
         .custom-music-info:hover {
             transform: scale(1.05);
             box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+        }
+
+        .custom-music-info.playing {
+            background: linear-gradient(135deg, #66BB6A 0%, #43A047 100%);
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
         }
 
         .custom-music-info.show {
@@ -693,6 +704,30 @@
             box-shadow: 0 8px 40px rgba(0,0,0,0.1), inset 0 2px 4px rgba(255,255,255,0.8);
         }
 
+        /* 已经过去的表盘区域 - 扇形 */
+        .clock-past-time {
+            position: absolute;
+            top: -6px;
+            left: -6px;
+            width: 412px;
+            height: 412px;
+            border-radius: 50%;
+            pointer-events: none;
+            z-index: 1;
+        }
+
+        .clock-past-segment {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 412px;
+            height: 412px;
+        }
+
+        .clock-past-sector {
+            fill: rgba(173, 216, 230, 0.3);
+        }
+
         .clock-face-wrapper {
             position: sticky;
             top: 20px;
@@ -793,10 +828,15 @@
 
         .clock-number {
             position: absolute;
-            font-size: 1.4em;
+            font-size: 0.9em;
             font-weight: 600;
             color: #4b5563;
             transform: translate(-50%, -50%);
+        }
+
+        .clock-number.past {
+            color: #999999;
+            opacity: 0.6;
         }
 
         /* 时钟中心 */
@@ -816,8 +856,9 @@
         /* 时钟指针 */
         .clock-hand {
             position: absolute;
-            bottom: 50%;
+            top: 50%;
             left: 50%;
+            transform: translate(-50%, -100%);
             transform-origin: bottom center;
             border-radius: 10px;
             z-index: 5;
@@ -1328,7 +1369,7 @@ Day 2
                 <button class="btn btn-secondary" onclick="document.getElementById('musicUpload').click()" style="padding: 8px 15px; font-size: 0.9em;">上传音乐</button>
                 <input type="file" id="musicUpload" accept="audio/*" style="display: none;" onchange="handleMusicUpload(event)">
                 <span id="uploadProgress" class="upload-progress"></span>
-                <span id="customMusicInfo" class="custom-music-info"></span>
+                <span id="customMusicInfo" class="custom-music-info" onclick="toggleRingtonePlay()"></span>
                 <button class="btn btn-secondary" onclick="checkCustomMusic()" style="padding: 8px 15px; font-size: 0.9em; margin-left: 10px;">检查铃声</button>
             </div>
         </div>
@@ -1470,6 +1511,9 @@ Day 2
         let audioPausedTime = 0; // 音频暂停时间
         let audioContext = null; // 音频上下文
         let currentGainNode = null; // 当前增益节点（用于实时音量控制）
+        let isRingtonePlaying = false; // 铃声是否正在播放
+        let ringtoneSource = null; // 当前试听的铃声源
+        let indexedDB = null; // IndexedDB数据库
         
         // day0对应的具体日期（从localStorage加载或使用默认值）
         let day0Date = new Date();
@@ -1491,8 +1535,136 @@ Day 2
         };
         let notificationSound = null;
 
+        // 初始化IndexedDB
+        function initIndexedDB() {
+            return new Promise((resolve, reject) => {
+                // 检查浏览器是否支持IndexedDB
+                const idb = window.indexedDB || window.webkitIndexedDB || window.mozIndexedDB || window.msIndexedDB;
+
+                if (!idb) {
+                    console.error('✗ 浏览器不支持IndexedDB');
+                    reject(new Error('浏览器不支持IndexedDB'));
+                    return;
+                }
+
+                console.log('→ 正在初始化IndexedDB...');
+
+                // 使用版本号2强制触发升级，确保存储对象存在
+                const request = idb.open('DietReminderDB', 2);
+
+                request.onerror = (event) => {
+                    console.error('✗ IndexedDB打开失败:', event.target.error);
+                    reject(event.target.error || event);
+                };
+
+                request.onsuccess = (event) => {
+                    indexedDB = event.target.result;
+                    console.log('✓ IndexedDB初始化成功');
+                    console.log('✓ 数据库名称:', indexedDB.name);
+                    console.log('✓ 数据库版本:', indexedDB.version);
+                    console.log('✓ 存储对象:', Array.from(indexedDB.objectStoreNames));
+                    resolve(indexedDB);
+                };
+
+                request.onupgradeneeded = (event) => {
+                    console.log('→ IndexedDB需要升级...');
+                    const db = event.target.result;
+                    if (!db.objectStoreNames.contains('audioStore')) {
+                        const objectStore = db.createObjectStore('audioStore', { keyPath: 'id' });
+                        objectStore.createIndex('name', 'name', { unique: false });
+                        console.log('✓ 创建audioStore存储对象');
+                    } else {
+                        console.log('✓ audioStore已存在');
+                    }
+                };
+
+                request.onblocked = (event) => {
+                    console.error('✗ IndexedDB被阻止打开:', event.target.error);
+                    alert('IndexedDB被阻止打开，请关闭其他使用数据库的标签页后重试');
+                    reject(event.target.error || event);
+                };
+            });
+        }
+
+        // 保存音频到IndexedDB
+        function saveAudioToIndexedDB(id, name, arrayBuffer) {
+            return new Promise((resolve, reject) => {
+                try {
+                    const transaction = indexedDB.transaction(['audioStore'], 'readwrite');
+                    const objectStore = transaction.objectStore('audioStore');
+
+                    const audioData = {
+                        id: id,
+                        name: name,
+                        data: arrayBuffer,
+                        timestamp: Date.now()
+                    };
+
+                    console.log('→ 准备保存到IndexedDB:', {
+                        id: id,
+                        name: name,
+                        dataSize: arrayBuffer.byteLength + ' bytes',
+                        sizeInMB: (arrayBuffer.byteLength / (1024 * 1024)).toFixed(2) + ' MB'
+                    });
+
+                    const request = objectStore.put(audioData);
+
+                    request.onsuccess = () => {
+                        console.log('✓ 音频已保存到IndexedDB:', name);
+                        resolve(audioData);
+                    };
+
+                    request.onerror = (event) => {
+                        console.error('✗ 保存到IndexedDB失败:', event.target.error);
+                        reject(event.target.error || event);
+                    };
+
+                    transaction.onerror = (event) => {
+                        console.error('✗ IndexedDB事务失败:', event.target.error);
+                        reject(event.target.error || event);
+                    };
+                } catch (error) {
+                    console.error('✗ saveAudioToIndexedDB异常:', error);
+                    reject(error);
+                }
+            });
+        }
+
+        // 从IndexedDB加载音频
+        function loadAudioFromIndexedDB(id) {
+            return new Promise((resolve, reject) => {
+                const transaction = indexedDB.transaction(['audioStore'], 'readonly');
+                const objectStore = transaction.objectStore('audioStore');
+                const request = objectStore.get(id);
+
+                request.onsuccess = (event) => {
+                    if (event.target.result) {
+                        console.log('✓ 从IndexedDB加载音频:', event.target.result.name);
+                        resolve(event.target.result);
+                    } else {
+                        console.log('IndexedDB中未找到音频');
+                        resolve(null);
+                    }
+                };
+
+                request.onerror = (event) => {
+                    console.error('✗ 从IndexedDB加载失败:', event);
+                    reject(event);
+                };
+            });
+        }
+
         // 初始化
         function init() {
+            // 初始化IndexedDB
+            initIndexedDB().then(() => {
+                // IndexedDB初始化后加载自定义音频
+                loadCustomAudioFromIndexedDB();
+            }).catch(err => {
+                console.error('IndexedDB初始化失败，尝试从localStorage加载:', err);
+                loadCustomAudioFromLocalStorage();
+            });
+
             // 自动计算当前日期对应的天数
             calculateCurrentDay();
 
@@ -1525,65 +1697,6 @@ Day 2
                 document.getElementById('volumeSlider').value = currentVolume;
                 document.getElementById('volumeValue').textContent = currentVolume + '%';
             }
-
-            // 尝试加载已保存的自定义音乐
-            try {
-                const savedAudioData = localStorage.getItem('customReminderSound');
-                const savedAudioName = localStorage.getItem('customReminderSoundName');
-
-                console.log('检查LocalStorage中的自定义铃声:', {
-                    hasAudioData: !!savedAudioData,
-                    hasAudioName: !!savedAudioName,
-                    audioName: savedAudioName
-                });
-
-                if (savedAudioData && savedAudioName) {
-                    // 保存文件名
-                    customAudioName = savedAudioName;
-
-                    console.log('✓ 找到已保存的自定义铃声:', savedAudioName);
-
-                    // 立即更新显示信息（在解码之前就显示文件名）
-                    updateCustomMusicInfo();
-
-                    // 立即解码音频数据，避免使用时重复解码
-                    // 使用用户交互来恢复音频上下文（如果需要）
-                    const decodeAudio = () => {
-                        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                        const arrayBuffer = base64ToArrayBuffer(savedAudioData);
-
-                        audioContext.decodeAudioData(
-                            arrayBuffer,
-                            function(buffer) {
-                                customAudioBuffer = buffer;
-                                console.log('✓ 自定义铃声解码成功:', savedAudioName);
-                                console.log('✓ 音频时长:', buffer.duration.toFixed(2), '秒');
-                                console.log('您的自定义铃声已经保存，刷新页面后会自动加载。');
-                            },
-                            function(error) {
-                                console.error('自定义铃声解码失败:', error);
-                                // 解码失败时清除保存的数据，避免重复尝试
-                                localStorage.removeItem('customReminderSound');
-                                localStorage.removeItem('customReminderSoundName');
-                                customAudioName = '';
-                                updateCustomMusicInfo();
-
-                                // 显示错误提示
-                                setTimeout(() => {
-                                    alert('自定义铃声加载失败，请重新上传音乐文件。');
-                                }, 1000);
-                            }
-                        );
-                    };
-
-                    // 直接尝试解码，如果失败会在用户交互时重试
-                    decodeAudio();
-                } else {
-                    console.log('LocalStorage中没有找到自定义铃声');
-                }
-            } catch (error) {
-                console.error('加载自定义音乐失败:', error);
-            }
         }
 
         // 更新时钟
@@ -1603,10 +1716,10 @@ Day 2
             const minutes = now.getMinutes();
 
             // 计算指针角度（确保与刻度准确对应）
-            // 时针：每小时30度，每分钟0.5度
+            // 24小时制：时针每小时15度（360/24），每分钟0.25度（15/60）
             // 分针：每分钟6度
-            // transform-origin: bottom center 意味着0度指向12点方向
-            const hourAngle = ((hours % 12) * 30) + (minutes * 0.5);
+            // transform-origin: bottom center 意味着0度指向12点方向（0点）
+            const hourAngle = (hours * 15) + (minutes * 0.25);
             const minuteAngle = minutes * 6;
 
             // 更新指针位置
@@ -2153,9 +2266,9 @@ Day 2
                 return;
             }
 
-            // 检查文件大小（限制为3MB，localStorage通常只能存储5-10MB）
-            if (file.size > 3 * 1024 * 1024) {
-                alert('文件太大，请选择小于3MB的音频文件\n\nLocalStorage存储空间有限，建议使用较小的音频文件。');
+            // 检查文件大小（IndexedDB可以存储更大文件，限制为50MB）
+            if (file.size > 50 * 1024 * 1024) {
+                alert('文件太大，请选择小于50MB的音频文件');
                 return;
             }
 
@@ -2170,98 +2283,188 @@ Day 2
             
             reader.onload = function(e) {
                 try {
-                    // 保存原始ArrayBuffer，在解码之前就保存到localStorage
+                    // 保存原始ArrayBuffer，优先保存到IndexedDB
                     const arrayBuffer = e.target.result;
 
                     console.log('✓ 文件读取成功，文件大小:', arrayBuffer.byteLength, 'bytes');
+                    console.log('✓ IndexedDB状态:', indexedDB ? '可用' : '不可用');
 
-                    // 保存到本地存储（使用Base64编码）
-                    const audioData = arrayBufferToBase64(arrayBuffer);
-
-                    try {
-                        localStorage.setItem('customReminderSound', audioData);
-                        localStorage.setItem('customReminderSoundName', file.name);
-
-                        console.log('✓ 已保存到LocalStorage:', {
-                            audioName: file.name,
-                            dataSize: audioData.length,
-                            sizeInKB: (audioData.length / 1024).toFixed(2) + ' KB'
-                        });
-
-                        // 验证保存是否成功
-                        const savedData = localStorage.getItem('customReminderSound');
-                        if (savedData) {
-                            console.log('✓ 验证成功：数据已保存到LocalStorage');
-                        } else {
-                            console.error('✗ 验证失败：数据未保存到LocalStorage');
-                            alert('保存失败，请尝试使用更小的音频文件');
-                            if (progressSpan) {
-                                progressSpan.style.display = 'none';
-                            }
-                            return;
-                        }
-                    } catch (error) {
-                        console.error('✗ 保存到LocalStorage失败:', error);
-                        alert('保存失败：localStorage空间不足或被禁用\n\n请尝试：\n1. 使用更小的音频文件（建议小于1MB）\n2. 清除浏览器缓存\n3. 检查浏览器设置是否允许localStorage');
-                        if (progressSpan) {
-                            progressSpan.style.display = 'none';
-                        }
-                        return;
+                    // 优先使用IndexedDB存储
+                    if (indexedDB) {
+                        console.log('→ 使用IndexedDB存储音频文件');
+                        saveAudioToIndexedDB('customRingtone', file.name, arrayBuffer)
+                            .then(() => {
+                                console.log('✓ IndexedDB保存成功，开始解码音频');
+                                // 解码音频文件
+                                decodeAndPlayAudio(arrayBuffer, file.name, progressSpan);
+                            })
+                            .catch(err => {
+                                console.error('✗ IndexedDB保存失败，尝试localStorage:', err);
+                                console.error('错误详情:', err.message || err);
+                                alert(`IndexedDB保存失败，尝试使用localStorage...\n\n错误: ${err.message || err}`);
+                                saveToLocalStorage(arrayBuffer, file.name, progressSpan);
+                            });
+                    } else {
+                        console.log('→ IndexedDB不可用，使用localStorage存储');
+                        // IndexedDB不可用，使用localStorage
+                        saveToLocalStorage(arrayBuffer, file.name, progressSpan);
                     }
-
-                    // 解码音频文件
-                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-
-                    audioContext.decodeAudioData(arrayBuffer, function(buffer) {
-                        // 保存音频缓冲区
-                        customAudioBuffer = buffer;
-                        customAudioName = file.name;
-
-                        console.log('✓ 音频解码成功，文件名:', customAudioName);
-                        console.log('✓ 音频时长:', buffer.duration.toFixed(2), '秒');
-
-                        // 自动切换到自定义音乐选项
-                        currentSoundType = 'custom';
-                        localStorage.setItem('reminderSoundType', 'custom');
-                        document.getElementById('soundType').value = 'custom';
-
-                        // 更新显示信息
-                        updateCustomMusicInfo();
-
-                        // 隐藏进度
-                        if (progressSpan) {
-                            progressSpan.style.display = 'none';
-                        }
-
-                        // 不再自动播放，让用户自己点击测试按钮播放
-                        // testSound(); // 移除自动播放
-
-                        alert(`自定义音乐 "${file.name}" 上传成功！\n\n现在您可以在铃声选项中选择"自定义音乐"，然后点击"测试声音"按钮来试听。\n\n提示：铃声已保存，刷新页面后会自动加载。`);
-                    }, function(error) {
-                        console.error('音频解码失败:', error);
-                        alert('音频文件解码失败，请检查文件格式');
-                        if (progressSpan) {
-                            progressSpan.style.display = 'none';
-                        }
-                    });
-
                 } catch (error) {
                     console.error('处理音频文件失败:', error);
-                    alert('处理音频文件失败，请检查文件格式');
+                    alert('处理音频文件失败: ' + error.message);
                     if (progressSpan) {
                         progressSpan.style.display = 'none';
                     }
                 }
             };
-            
+
             reader.onerror = function() {
                 alert('读取文件失败');
                 if (progressSpan) {
                     progressSpan.style.display = 'none';
                 }
             };
-            
+
             reader.readAsArrayBuffer(file);
+        }
+
+        // 解码并播放音频
+        function decodeAndPlayAudio(arrayBuffer, fileName, progressSpan) {
+            // 解码音频文件
+            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+            audioContext.decodeAudioData(arrayBuffer, function(buffer) {
+                // 保存音频缓冲区
+                customAudioBuffer = buffer;
+                customAudioName = fileName;
+
+                console.log('✓ 音频解码成功，文件名:', customAudioName);
+                console.log('✓ 音频时长:', buffer.duration.toFixed(2), '秒');
+
+                // 自动切换到自定义音乐选项
+                currentSoundType = 'custom';
+                localStorage.setItem('reminderSoundType', 'custom');
+                document.getElementById('soundType').value = 'custom';
+
+                // 更新显示信息
+                updateCustomMusicInfo();
+
+                // 隐藏进度
+                if (progressSpan) {
+                    progressSpan.style.display = 'none';
+                }
+
+                alert('自定义铃声上传成功！');
+            }, function(error) {
+                console.error('✗ 音频解码失败:', error);
+                alert('音频解码失败，请检查文件格式是否正确');
+                if (progressSpan) {
+                    progressSpan.style.display = 'none';
+                }
+            });
+        }
+
+        // 保存到localStorage（备用方案）
+        function saveToLocalStorage(arrayBuffer, fileName, progressSpan) {
+            try {
+                // 先清除旧的音频数据以释放空间
+                localStorage.removeItem('customReminderSound');
+                localStorage.removeItem('customReminderSoundName');
+
+                const audioData = arrayBufferToBase64(arrayBuffer);
+                localStorage.setItem('customReminderSound', audioData);
+                localStorage.setItem('customReminderSoundName', fileName);
+
+                console.log('✓ 已保存到LocalStorage:', {
+                    audioName: fileName,
+                    dataSize: audioData.length,
+                    sizeInKB: (audioData.length / 1024).toFixed(2) + ' KB'
+                });
+
+                // 解码音频文件
+                decodeAndPlayAudio(arrayBuffer, fileName, progressSpan);
+            } catch (error) {
+                console.error('✗ 保存到LocalStorage失败:', error);
+                alert('保存失败：localStorage空间不足\n\n建议：\n1. 刷新页面重试（会使用IndexedDB存储更大文件）\n2. 使用更小的音频文件\n3. 清除浏览器缓存');
+                if (progressSpan) {
+                    progressSpan.style.display = 'none';
+                }
+            }
+        }
+
+        // 从IndexedDB加载自定义音频
+        function loadCustomAudioFromIndexedDB() {
+            if (!indexedDB) return;
+
+            loadAudioFromIndexedDB('customRingtone')
+                .then(result => {
+                    if (result && result.data) {
+                        customAudioName = result.name;
+                        console.log('✓ 从IndexedDB加载音频成功:', customAudioName);
+
+                        // 解码音频
+                        if (!audioContext) {
+                            audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        }
+
+                        audioContext.decodeAudioData(result.data, function(buffer) {
+                            customAudioBuffer = buffer;
+                            console.log('✓ IndexedDB音频解码成功，时长:', buffer.duration.toFixed(2), '秒');
+                            updateCustomMusicInfo();
+                        }, function(error) {
+                            console.error('✗ IndexedDB音频解码失败:', error);
+                        });
+                    } else {
+                        console.log('IndexedDB中未找到自定义铃声，尝试localStorage');
+                        loadCustomAudioFromLocalStorage();
+                    }
+                })
+                .catch(err => {
+                    console.error('从IndexedDB加载失败:', err);
+                    loadCustomAudioFromLocalStorage();
+                });
+        }
+
+        // 从localStorage加载自定义音频
+        function loadCustomAudioFromLocalStorage() {
+            const savedAudioData = localStorage.getItem('customReminderSound');
+            const savedAudioName = localStorage.getItem('customReminderSoundName');
+
+            console.log('检查LocalStorage中的自定义铃声:', {
+                hasAudioData: !!savedAudioData,
+                audioName: savedAudioName
+            });
+
+            if (savedAudioData && savedAudioName) {
+                customAudioName = savedAudioName;
+                console.log('✓ 找到已保存的自定义铃声:', savedAudioName);
+
+                try {
+                    const arrayBuffer = base64ToArrayBuffer(savedAudioData);
+                    console.log('✓ Base64解码成功，数据大小:', arrayBuffer.byteLength, 'bytes');
+
+                    if (!audioContext) {
+                        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+
+                    audioContext.decodeAudioData(arrayBuffer, function(buffer) {
+                        customAudioBuffer = buffer;
+                        console.log('✓ 自定义铃声解码成功:', savedAudioName);
+                        console.log('✓ 自定义铃声已经保存，刷新页面后会自动加载。');
+                        updateCustomMusicInfo();
+                    }, function(error) {
+                        console.error('✗ 自定义铃声解码失败:', error);
+                        customAudioBuffer = null;
+                        customAudioName = '';
+                    });
+                } catch (error) {
+                    console.error('✗ 自定义铃声加载失败:', error);
+                    customAudioBuffer = null;
+                    customAudioName = '';
+                }
+            } else {
+                console.log('LocalStorage中没有找到自定义铃声');
+            }
         }
 
         // 更新自定义音乐信息显示
@@ -2273,6 +2476,9 @@ Day 2
                 infoSpan.id = 'customMusicInfo';
                 infoSpan.className = 'custom-music-info';
                 infoSpan.style.marginLeft = '10px';
+
+                // 添加点击事件，用于播放/暂停铃声
+                infoSpan.addEventListener('click', toggleRingtonePlay);
 
                 // 找到包含声音设置的div
                 const soundSettingsDiv = document.querySelector('.input-section div[style*="display: inline-flex"]');
@@ -2286,13 +2492,83 @@ Day 2
 
             if (customAudioName) {
                 infoSpan.textContent = `🎵 ${customAudioName}`;
-                infoSpan.title = `已保存的自定义铃声: ${customAudioName}`;
+                infoSpan.title = `点击播放/暂停自定义铃声: ${customAudioName}`;
                 infoSpan.classList.add('show');
                 console.log('✓ 已显示自定义铃声信息:', customAudioName);
             } else {
                 infoSpan.textContent = '';
                 infoSpan.title = '';
                 infoSpan.classList.remove('show');
+                infoSpan.classList.remove('playing');
+            }
+        }
+
+        // 试听铃声（播放/暂停）
+        function toggleRingtonePlay() {
+            // 确保只有自定义铃声才能试听
+            if (currentSoundType !== 'custom' || !customAudioBuffer) {
+                alert('请先上传自定义铃声！');
+                return;
+            }
+
+            const infoSpan = document.getElementById('customMusicInfo');
+
+            // 如果正在播放，则暂停
+            if (isRingtonePlaying && window.ringtoneSource) {
+                try {
+                    window.ringtoneSource.stop();
+                    window.ringtoneSource.disconnect();
+                    window.ringtoneSource = null;
+                } catch (e) {
+                    console.log('停止铃声时出错:', e);
+                }
+                isRingtonePlaying = false;
+                if (infoSpan) infoSpan.classList.remove('playing');
+                return;
+            }
+
+            // 停止其他所有音频
+            stopAllAudio();
+
+            // 创建音频上下文
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+
+            try {
+                // 创建音频源
+                const source = audioContext.createBufferSource();
+                source.buffer = customAudioBuffer;
+                source.loop = false;
+
+                // 创建增益节点（音量控制）
+                const gainNode = audioContext.createGain();
+                gainNode.gain.value = currentVolume / 100;
+
+                // 连接节点
+                source.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+
+                // 播放音频
+                source.start(0);
+                window.ringtoneSource = source;
+                isRingtonePlaying = true;
+
+                if (infoSpan) infoSpan.classList.add('playing');
+
+                // 播放结束时自动停止
+                source.onended = function() {
+                    isRingtonePlaying = false;
+                    if (infoSpan) infoSpan.classList.remove('playing');
+                    window.ringtoneSource = null;
+                };
+
+                console.log('✓ 开始试听自定义铃声');
+            } catch (error) {
+                console.error('播放铃声时出错:', error);
+                alert('播放铃声失败，请重新上传音频文件');
+                isRingtonePlaying = false;
+                if (infoSpan) infoSpan.classList.remove('playing');
             }
         }
 
@@ -2303,30 +2579,29 @@ Day 2
 
             let message = '自定义铃声状态：\n\n';
 
-            if (savedAudioName) {
-                message += `✓ 文件名: ${savedAudioName}\n`;
+            if (savedAudioName || customAudioName) {
+                const name = customAudioName || savedAudioName;
+                message += `✓ 文件名: ${name}\n`;
                 if (savedAudioData) {
-                    message += `✓ 数据大小: ${(savedAudioData.length / 1024).toFixed(2)} KB\n`;
-                    message += `✓ 数据长度: ${savedAudioData.length} 字符\n`;
+                    message += `✓ localStorage数据大小: ${(savedAudioData.length / 1024).toFixed(2)} KB\n`;
                 } else {
-                    message += `✗ 数据: 未找到\n`;
+                    message += `✓ 使用IndexedDB存储（大文件支持）\n`;
                 }
                 message += `✓ 当前铃声类型: ${currentSoundType === 'custom' ? '自定义音乐' : '其他'}\n`;
                 message += `✓ 音频缓冲区: ${customAudioBuffer ? '已加载' : '未加载'}\n`;
                 if (customAudioBuffer) {
                     message += `✓ 音频时长: ${customAudioBuffer.duration.toFixed(2)} 秒\n`;
                 }
-                message += '\n✓ 您的自定义铃声已成功保存！';
+                if (indexedDB) {
+                    message += `✓ IndexedDB: 已启用\n`;
+                }
+                message += '\n✓ 您的自定义铃声已成功保存！\n';
+                message += '提示：点击铃声名称可试听';
             } else {
                 message += '✗ 未找到自定义铃声\n\n';
-                message += '可能的原因：\n';
-                message += '1. 文件太大（超过3MB）\n';
-                message += '2. localStorage空间不足\n';
-                message += '3. 浏览器禁用了localStorage\n\n';
-                message += '请尝试：\n';
-                message += '- 使用更小的音频文件（建议小于1MB）\n';
-                message += '- 清除浏览器缓存后重试\n';
-                message += '- 点击"上传音乐"按钮重新上传';
+                message += '请点击"上传音乐"按钮上传音频文件\n';
+                message += '支持的格式：MP3、WAV、OGG等\n';
+                message += '文件大小限制：最大50MB';
             }
 
             alert(message);
@@ -2340,6 +2615,7 @@ Day 2
                 采样率: customAudioBuffer.sampleRate + 'Hz',
                 声道数: customAudioBuffer.numberOfChannels
             } : '未加载');
+            console.log('IndexedDB:', indexedDB ? '已启用' : '未启用');
             console.log('========================');
         }
 
@@ -2904,9 +3180,9 @@ Day 2
             const minutes = now.getMinutes();
 
             // 计算指针角度（确保与刻度准确对应）
-            // 时针：每小时30度，每分钟0.5度
+            // 24小时制：时针每小时15度（360/24），每分钟0.25度（15/60）
             // 分针：每分钟6度
-            const hourAngle = ((hours % 12) * 30) + (minutes * 0.5);
+            const hourAngle = (hours * 15) + (minutes * 0.25);
             const minuteAngle = minutes * 6;
 
             // 当前时间字符串（带秒数）
@@ -2921,10 +3197,10 @@ Day 2
                 const isMajor = i % 5 === 0;
                 const radius = 190;
                 const length = isMajor ? 20 : 10;
-                const x1 = Math.cos(angle) * radius + 200;
-                const y1 = Math.sin(angle) * radius + 200;
-                const x2 = Math.cos(angle) * (radius - length) + 200;
-                const y2 = Math.sin(angle) * (radius - length) + 200;
+                const x1 = Math.cos(angle) * radius + 194;  // 往左移动6像素
+                const y1 = Math.sin(angle) * radius + 195;  // 往上移动5像素
+                const x2 = Math.cos(angle) * (radius - length) + 194;  // 往左移动6像素
+                const y2 = Math.sin(angle) * (radius - length) + 195;  // 往上移动5像素
 
                 marksHtml += `
                     <div class="clock-mark ${isMajor ? 'major' : 'minor'}"
@@ -2932,14 +3208,22 @@ Day 2
                 `;
             }
 
-            // 生成时钟数字
+            // 生成时钟数字（24小时制：0-23）
             let numbersHtml = '';
-            for (let i = 1; i <= 12; i++) {
-                const angle = (i * 30 - 90) * (Math.PI / 180);
+            for (let i = 0; i < 24; i++) {
+                // 只显示偶数小时，避免数字过于密集
+                if (i % 2 !== 0) continue;
+
+                const angle = (i * 15 - 90) * (Math.PI / 180);
                 const radius = 150;
-                const x = Math.cos(angle) * radius + 200;
-                const y = Math.sin(angle) * radius + 200;
-                numbersHtml += `<div class="clock-number" style="left: ${x}px; top: ${y}px;">${i}</div>`;
+                const x = Math.cos(angle) * radius + 194;  // 往左移动6像素
+                const y = Math.sin(angle) * radius + 195;  // 往上移动5像素
+
+                // 判断这个小时是否已经过去
+                const isPast = (hours > i) || (hours === i && minutes > 0);
+                const pastClass = isPast ? 'past' : '';
+
+                numbersHtml += `<div class="clock-number ${pastClass}" style="left: ${x}px; top: ${y}px;">${i}</div>`;
             }
 
             // 生成饮食标记点
@@ -2949,11 +3233,11 @@ Day 2
                 const reminderHours = date.getHours();
                 const reminderMinutes = date.getMinutes();
 
-                // 将24小时制转换为12小时制
-                const displayHour = reminderHours % 12 || 12;
+                // 24小时制：直接使用小时值，无需转换
+                const displayHour = reminderHours;
 
-                // 计算角度（考虑分钟）
-                const angle = (displayHour * 30 + reminderMinutes * 0.5 - 90) * (Math.PI / 180);
+                // 计算角度（考虑分钟）- 24小时制每小时15度
+                const angle = (displayHour * 15 + reminderMinutes * 0.25 - 90) * (Math.PI / 180);
                 const radius = 175; // 标记点距离中心的半径（移到表盘边缘，接近刻度）
 
                 const x = Math.cos(angle) * radius + 200;
@@ -2965,9 +3249,9 @@ Day 2
                 const mealClass = getMealClass(reminder.mealType);
                 const mealIcon = getMealIcon(reminder.mealType);
 
-                // 计算提示框的位置（根据标记点的角度调整）
+                // 计算提示框的位置（根据标记点的角度调整）- 24小时制角度计算
                 let tooltipStyle = '';
-                const angleDeg = displayHour * 30 + reminderMinutes * 0.5 - 90;
+                const angleDeg = displayHour * 15 + reminderMinutes * 0.25 - 90;
 
                 if (angleDeg >= -45 && angleDeg <= 45) {
                     tooltipStyle = 'top: -50px;';
@@ -2999,15 +3283,33 @@ Day 2
             }).length;
             const pendingReminders = totalReminders - notifiedReminders;
 
+            // 生成已过去的时间区域（用SVG扇形表示）
+            // 24小时制：0点在顶部（12点方向），当前时针角度 = hours * 15 + minutes * 0.25
+            // 0点 = 0度，6点 = 90度，12点 = 180度，18点 = 270度
+            // 扩大SVG尺寸到412x412（400内容+6px边框×2），让扇形和表盘外边框对齐
+            const pastTimeHtml = `
+                <div class="clock-past-time">
+                    <svg width="412" height="412" viewBox="-6 -6 424 424" class="clock-past-segment">
+                        <path class="clock-past-sector" d="
+                            M 200 200
+                            L 200 -6
+                            A 206 206 0 ${hourAngle > 180 ? 1 : 0} 1
+                            ${200 + 206 * Math.cos((hourAngle - 90) * Math.PI / 180)}
+                            ${200 + 206 * Math.sin((hourAngle - 90) * Math.PI / 180)}
+                            Z
+                        "/>
+                    </svg>
+                </div>
+            `;
+
             return `
                 <div class="clock-face-wrapper">
                     <div class="clock-face">
+                        ${pastTimeHtml}
                         ${marksHtml}
                         ${numbersHtml}
                         ${markersHtml}
-                        <div class="clock-center"></div>
-                        <div class="clock-hand hour" style="transform: rotate(${hourAngle}deg);"></div>
-                        <div class="clock-hand minute" style="transform: rotate(${minuteAngle}deg);"></div>
+
                     </div>
                     <div class="clock-time-display">
                         <div class="main-time">
@@ -3659,7 +3961,25 @@ Day 2
                         console.log('停止Audio元素时出错:', e);
                     }
                 });
-                
+
+                // 停止正在试听的铃声
+                if (window.ringtoneSource) {
+                    try {
+                        window.ringtoneSource.stop();
+                        window.ringtoneSource.disconnect();
+                        window.ringtoneSource = null;
+                    } catch (e) {
+                        console.log('停止铃声时出错:', e);
+                    }
+                }
+                isRingtonePlaying = false;
+
+                // 移除播放状态样式
+                const infoSpan = document.getElementById('customMusicInfo');
+                if (infoSpan) {
+                    infoSpan.classList.remove('playing');
+                }
+
             } catch (error) {
                 console.error('停止音频时出错:', error);
             }
